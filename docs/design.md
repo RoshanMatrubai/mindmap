@@ -49,7 +49,7 @@ This is the heart of the look: a d3-force style simulation, run once per change,
 Each tick, with `alpha` decaying from 1 toward 0 by 2% per tick:
 
 1. **Repel.** Every pair pushes apart with force `repel × alpha / distance²`, ignored beyond 600 units. Group pairs get 1.4× weight. Use Barnes-Hut or a uniform grid once nodes exceed about 300; the prototype is O(n²).
-2. **Springs.** Each parent and child pair pulls toward `link distance` (subtasks at 1.5× that), scaled by `link force`. Cross links are springs at 12% strength and 3× distance.
+2. **Springs.** Each parent and child pair pulls toward `link distance`, scaled by `link force`. As in the prototype's code, a group→task spring (prototype depth 2, our depth 1) is 1.5× that and every deeper level 1×. Cross links are springs at 12% strength and 3× distance.
 3. **Center gravity.** Pulls every node toward the origin with strength `center`.
 4. **Urgency force.** Each node gets an urgency score from 0 to 1: due-date closeness `(8 − daysUntilDue) / 8`, plus 0.5 for high or 0.25 for medium priority, capped at 1. Parents inherit 85% of their most urgent child.
    - **Pull in:** extra gravity `0.05 × urgency`. Urgent work collects in the middle.
@@ -64,6 +64,26 @@ Starting positions:
 
 - Fresh build or reshuffle: uniform random in a disk of radius 650 from a new seed.
 - Text edit: warm start. Nodes keep their old position (matched on full path, `school/calc iii work`); new nodes spawn near their parent; reheat to alpha 0.3 instead of 1. Typing should nudge the map, not rebuild it.
+
+## Decisions for the graph (steps 2 and 3)
+
+Step 2 (built):
+
+- Done tasks: node and label at 40% opacity, label struck through, urgency 0.
+- The implicit `loose` group is drawn like any group.
+- Each map remembers its layout seed, so reopening shows the same layout. Reshuffle (⇧⌘R) picks a new seed and clears pins.
+- Zoom range: from 1/10 of "fit all" out to 10× "fit all" in.
+- Input. Trackpad: two-finger scroll pans, pinch zooms about the cursor. Mouse: the wheel zooms about the cursor, dragging empty canvas pans. Zoom in, zoom out and fit buttons top right. Camera moves from buttons and shortcuts animate about 380 ms, ease-out cubic, as Core Animation keyframes. Fit all on first show, rebuild and window resize until the user pans or zooms.
+- Typing: each debounced parse rebuilds the layout instantly with the map's seed (warm start comes in step 3). Pinned nodes keep their positions.
+- Dragging a node (4 px threshold, about 14 px hit radius) moves it; its edges and cross links follow and nothing else moves. No physics during the drag.
+- After a drop the node is pinned there until reshuffle. Rebuilds treat pinned nodes as fixed points.
+- Layout state lives in a hidden sidecar next to the map, `.<map file name>.layout.json`: the seed and pinned positions keyed by node path key. It is renamed with the map and written debounced (500 ms). Never in the container, because pin keys contain task names. The dev app's sidecars live in its own dev maps folder.
+
+Step 3 (planned):
+
+- Neighbors react live while a node is dragged, then the graph refreezes.
+- Return adds a task after the selected task's branch; Tab adds a subtask as the last child; the name is then typed inline on the graph. Double-click empty canvas adds a group. Right-click offers the same actions.
+- Delete removes the node and its subtasks from the text with no confirmation. ⌘Z undoes it, and the undo history is shared with the editor.
 
 ## Settings
 

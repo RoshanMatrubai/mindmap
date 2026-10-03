@@ -1,6 +1,15 @@
 import AppKit
 import MindmapCore
+import MindmapGraph
 import Observation
+
+/// A frozen layout for the graph pane. `generation` changes only when there is something new to
+/// draw; `refit` asks the pane to fit everything again (new map, reshuffle).
+struct GraphUpdate {
+  let layout: GraphLayout
+  let refit: Bool
+  let generation: Int
+}
 
 @MainActor @Observable
 final class MapStore {
@@ -16,6 +25,13 @@ final class MapStore {
   private(set) var model = MapParser.parse(text: "", today: Date(), calendar: .current)
   private(set) var parsedText = ""
   private(set) var isSwitching = true
+  private(set) var graph: GraphUpdate?
+  @ObservationIgnored weak var graphView: GraphView?
+  @ObservationIgnored weak var editorView: NSTextView?
+  @ObservationIgnored private var layoutState = LayoutSidecar(seed: LayoutSidecar.randomSeed())
+  @ObservationIgnored private var layoutSaveTask: Task<Void, Never>?
+  @ObservationIgnored private(set) var hasUnsavedLayout = false
+  @ObservationIgnored private var refitNext = true
   var errorMessage: String?
   private var savedText = ""
   private var loaded: MapRepository.Loaded?
@@ -55,20 +71,80 @@ final class MapStore {
     if MapDocument.title(of: text) != oldTitle { scheduleRename() }
   }
 
-  private func scheduleParse() {
+  /// Parse and run the whole layout off the main thread, then hand the frozen result to the graph.
+  /// Each rebuild uses the map's seed; pinned nodes are fixed points.
+  private func scheduleParse(debounce: Bool = true) {
     parseTask?.cancel()
     let snapshot = text
+    let seed = layoutState.seed
+    let pins = layoutState.pins
     parseTask = Task {
-      do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
+      if debounce {
+        do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
+      }
       let today = Date()
       let calendar = Calendar.current
-      let result = await Task.detached(priority: .userInitiated) {
-        MapParser.parse(text: snapshot, today: today, calendar: calendar)
+      let (result, layout) = await Task.detached(priority: .userInitiated) {
+        let model = MapParser.parse(text: snapshot, today: today, calendar: calendar)
+        let layout = ForceLayout.run(
+          model: model, seed: seed, pins: pins, today: today, calendar: calendar,
+          measure: GraphStyle.measure)
+        return (model, layout)
       }.value
       guard !Task.isCancelled, text == snapshot else { return }
       model = result
       parsedText = snapshot
+      graph = GraphUpdate(
+        layout: layout, refit: refitNext, generation: (graph?.generation ?? 0) + 1)
+      refitNext = false
     }
+  }
+
+  /// ⇧⌘R: a new seed, no pins, a fresh layout fitted to the window.
+  func reshuffle() {
+    layoutState = LayoutSidecar(seed: LayoutSidecar.randomSeed())
+    refitNext = true
+    scheduleParse(debounce: false)
+    scheduleLayoutSave()
+  }
+
+  /// A dropped node stays where it was put until reshuffle.
+  func pin(_ key: String, at point: LayoutPoint) {
+    layoutState.pins[key] = point
+    scheduleLayoutSave()
+  }
+
+  private func scheduleLayoutSave() {
+    hasUnsavedLayout = true
+    layoutSaveTask?.cancel()
+    layoutSaveTask = Task {
+      do { try await Task.sleep(for: .milliseconds(500)) } catch { return }
+      await saveLayout()
+    }
+  }
+
+  private func saveLayout() async {
+    guard hasUnsavedLayout, currentURL != nil else { return }
+    hasUnsavedLayout = false
+    do { try await repository.saveLayout(layoutState, document: documentID) } catch {
+      report("save layout", error)
+    }
+  }
+
+  func focusEditor() {
+    if let editorView { editorView.window?.makeFirstResponder(editorView) }
+  }
+
+  func focusGraph() {
+    if let graphView { graphView.window?.makeFirstResponder(graphView) }
+  }
+
+  /// ⇧⌘] / ⇧⌘[: the next or previous map in the switcher's order, wrapping around.
+  func switchMap(by offset: Int) {
+    guard maps.count > 1, let current = maps.firstIndex(where: { $0.url == currentURL }) else {
+      return
+    }
+    switchMap(maps[(current + offset + maps.count) % maps.count].url)
   }
 
   private func scheduleRename() {
@@ -89,7 +165,13 @@ final class MapStore {
       guard documentID == identity else { return true }
       savedText = snapshot
       loaded = result.loaded
-      try await refreshMaps()
+      // Update this map's entry in place; the folder is re-listed only on new map, rename,
+      // switch and activation.
+      if let index = maps.firstIndex(where: { $0.url == result.url }) {
+        maps[index] = MapFile(
+          url: result.url, title: MapDocument.title(of: snapshot) ?? "untitled map",
+          modified: result.loaded.modified ?? Date())
+      }
       return true
     } catch {
       report("autosave", error)
@@ -138,12 +220,18 @@ final class MapStore {
   }
 
   private func open(_ url: URL) async {
+    layoutSaveTask?.cancel()
+    await saveLayout()
     do {
       let identity = UUID()
       let result = try await repository.open(url, document: identity)
+      let remembered = await repository.loadLayout(document: identity)
       currentURL = url
       documentID = identity
       loaded = result
+      layoutState = remembered ?? LayoutSidecar(seed: LayoutSidecar.randomSeed())
+      refitNext = true
+      if remembered == nil { scheduleLayoutSave() }
       savedText = result.text
       loadingText = true
       text = result.text
@@ -229,7 +317,18 @@ final class MapStore {
     do {
       let url = try URL(
         resolvingBookmarkData: data, options: .withSecurityScope, bookmarkDataIsStale: &stale)
-      guard !stale, url.startAccessingSecurityScopedResource() else { return }
+      guard url.startAccessingSecurityScopedResource() else {
+        log.error("maps folder bookmark grants no access")
+        return
+      }
+      if stale {
+        // Still resolves and grants access: renew it quietly instead of asking again.
+        do {
+          UserDefaults.standard.set(
+            try url.bookmarkData(options: .withSecurityScope), forKey: Self.bookmarkKey)
+          log.notice("renewed stale maps folder bookmark")
+        } catch { log.error("renewing stale bookmark failed: \(error, privacy: .public)") }
+      }
       guard GitGuard.workTree(around: url, scanDescendants: false) == nil else {
         url.stopAccessingSecurityScopedResource()
         return
@@ -260,6 +359,8 @@ final class MapStore {
 
   func finishSaving() async -> Bool {
     isSwitching = true
+    layoutSaveTask?.cancel()
+    await saveLayout()
     let result = await save()
     if !result { isSwitching = false }
     return result

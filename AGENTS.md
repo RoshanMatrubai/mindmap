@@ -50,6 +50,10 @@ User data never lives in the repo, and agents never touch the real user's data. 
 - Never add dependencies: Apple frameworks only, including dev tooling.
 - Never commit, push, or change git history.
 
+## Shortcuts
+
+Every user-facing shortcut is a menu item and is listed in the README's keyboard shortcuts table. Check docs/roadmap.md for planned shortcuts before adding new ones.
+
 ## Priorities
 
 1. Smoothness (120 Hz pan/zoom/settle at 500 nodes; typing never stutters).

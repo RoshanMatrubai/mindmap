@@ -7,7 +7,7 @@ Status: accepted, 2026-10-03. Supersedes the data-location, signing and Claude C
 | Topic | Decision |
 |---|---|
 | Guard for real data | macOS Files & Folders protection. Maps live in a folder the user picks on first launch (`NSOpenPanel`, starts in `~/Documents`; default `~/Documents/mindmap`). Terminal programs (Claude Code, Codex, any shell) can't read Documents, Desktop, Downloads or iCloud Drive unless the user allows it |
-| Access | App-scoped security-scoped bookmark in the container's UserDefaults. Entitlements: App Sandbox, `files.user-selected.read-write`, `files.bookmarks.app-scope`. A stale bookmark, one that fails to resolve, or one that grants no access is logged and the picker is shown again. File > Change Maps Folder… re-picks |
+| Access | App-scoped security-scoped bookmark in the container's UserDefaults. Entitlements: App Sandbox, `files.user-selected.read-write`, `files.bookmarks.app-scope`. A stale bookmark that still resolves and grants access is renewed quietly (fresh bookmark data from the resolved URL). One that fails to resolve or grants no access is logged and the picker is shown again. File > Change Maps Folder… re-picks |
 | Data rule in the app | The picker refuses a folder inside, or containing, a git work tree, and says why. The saved folder is re-checked at launch |
 | What goes where | Maps folder: maps, and anything sensitive later steps store (e.g. calendar event mappings). Container: settings and caches only |
 | Debug | Maps go in `Application Support/maps` inside the dev container: no picker, no prompts, so the agent debug loop runs unattended. `-use-folder-picker YES` behaves like Release |

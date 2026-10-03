@@ -5,6 +5,12 @@ public struct MapFile: Identifiable, Sendable, Equatable {
   public let url: URL
   public let title: String
   public let modified: Date
+
+  public init(url: URL, title: String, modified: Date) {
+    self.url = url
+    self.title = title
+    self.modified = modified
+  }
 }
 
 /// File operations run on the app's repository actor, never during typing on the main thread.

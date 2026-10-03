@@ -34,6 +34,7 @@ struct OutlineEditor: NSViewRepresentable {
     view.onChange = { text in store.text = text }
     view.load(store.text, map: store.documentID)
     scroll.documentView = view
+    store.editorView = view
     return scroll
   }
 
@@ -178,17 +179,39 @@ final class OutlineTextView: NSTextView, @preconcurrency NSTextStorageDelegate {
   override func insertBacktab(_ sender: Any?) { apply(.backtab) { super.insertBacktab(sender) } }
 
   private func apply(_ key: EditingKey, fallback: () -> Void) {
-    guard let change = OutlineEditing.change(text: string, selection: selectedRange(), key: key)
-    else {
+    if !perform(OutlineEditing.change(text: string, selection: selectedRange(), key: key)) {
       fallback()
-      return
     }
+  }
+
+  // Menu commands (Outline menu), sent through the responder chain.
+  @objc func toggleDone(_ sender: Any?) {
+    perform(OutlineEditing.toggleDone(text: string, selection: selectedRange()))
+  }
+  @objc func indentLines(_ sender: Any?) {
+    perform(OutlineEditing.change(text: string, selection: selectedRange(), key: .tab))
+  }
+  @objc func outdentLines(_ sender: Any?) {
+    perform(OutlineEditing.change(text: string, selection: selectedRange(), key: .backtab))
+  }
+  @objc func moveLineUp(_ sender: Any?) {
+    perform(OutlineEditing.moveBlock(text: string, selection: selectedRange(), up: true))
+  }
+  @objc func moveLineDown(_ sender: Any?) {
+    perform(OutlineEditing.moveBlock(text: string, selection: selectedRange(), up: false))
+  }
+
+  /// Applies a change as one undo step. `false` when there was nothing to do.
+  @discardableResult
+  private func perform(_ change: TextChange?) -> Bool {
+    guard let change, isEditable else { return false }
     breakUndoCoalescing()
     undoManager?.beginUndoGrouping()
     insertText(change.replacement, replacementRange: change.range)
     setSelectedRange(change.selection)
     undoManager?.endUndoGrouping()
     breakUndoCoalescing()
+    return true
   }
 
   override func paste(_ sender: Any?) {

@@ -9,20 +9,8 @@ struct ContentView: View {
     HSplitView {
       OutlineEditor(store: store)
         .frame(minWidth: 300, idealWidth: 400)
-      ZStack(alignment: .topLeading) {
-        Color(red: 0x1e / 255, green: 0x1e / 255, blue: 0x1e / 255)
-        VStack(alignment: .leading, spacing: 10) {
-          Text((store.model.title.isEmpty ? "untitled map" : store.model.title).lowercased())
-            .font(.system(size: 15))
-            .foregroundStyle(Color(red: 0x63 / 255, green: 0x63 / 255, blue: 0x66 / 255))
-          Text(store.model.statsText)
-            .font(.system(size: 13))
-            .foregroundStyle(Color(red: 0x8e / 255, green: 0x8e / 255, blue: 0x93 / 255))
-        }
-        .padding(.leading, 14)
-        .padding(.top, 10)
-      }
-      .frame(minWidth: 400)
+      GraphPane(store: store)
+        .frame(minWidth: 400)
     }
     .frame(minWidth: 900, minHeight: 600)
     .preferredColorScheme(.dark)
@@ -53,6 +41,7 @@ struct ContentView: View {
     .onAppear {
       #if DEBUG
         EditorSmoke.runIfRequested()
+        DebugLaunch.applyWindowSize()
       #endif
       if store.folder == nil && !store.isSwitching {
         DispatchQueue.main.async { store.chooseFolder() }

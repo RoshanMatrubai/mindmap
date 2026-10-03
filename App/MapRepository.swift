@@ -35,6 +35,15 @@ actor MapRepository {
 
   func list(_ folder: URL) throws -> [MapFile] { try MapFiles.list(in: folder) }
 
+  func loadLayout(document: UUID) -> LayoutSidecar? {
+    documents[document].flatMap(LayoutSidecar.load(for:))
+  }
+
+  func saveLayout(_ layout: LayoutSidecar, document: UUID) throws {
+    guard let url = documents[document] else { throw CocoaError(.fileNoSuchFile) }
+    try layout.save(for: url)
+  }
+
   func load(_ url: URL) throws -> Loaded {
     let text = try String(contentsOf: url, encoding: .utf8)
     var fresh = url
@@ -64,7 +73,13 @@ actor MapRepository {
   func rename(_ url: URL, title: String) throws -> URL {
     let target = MapFiles.availableURL(
       title: title, in: url.deletingLastPathComponent(), excluding: url)
-    if target != url { try FileManager.default.moveItem(at: url, to: target) }
+    if target != url {
+      try FileManager.default.moveItem(at: url, to: target)
+      // The layout sidecar follows its map; losing it only costs the remembered layout.
+      do { try LayoutSidecar.move(from: url, to: target) } catch {
+        log.error("layout sidecar rename failed: \(error, privacy: .public)")
+      }
+    }
     return target
   }
 }

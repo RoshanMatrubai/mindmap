@@ -160,3 +160,90 @@ func enterDoesNotContinueCheckmark(marker: String) throws {
     OutlineEditing.change(text: "-word", selection: NSRange(location: 5, length: 0), key: .tab)
       == nil)
 }
+
+private func applied(_ text: String, _ change: TextChange?) throws -> (String, NSRange) {
+  let change = try #require(change)
+  return (
+    (text as NSString).replacingCharacters(in: change.range, with: change.replacement),
+    change.selection
+  )
+}
+
+@Test func toggleDoneMarksOpenAndPlainBulletsDone() throws {
+  let (text, selection) = try applied(
+    "g\n- a\n- [ ] b",
+    OutlineEditing.toggleDone(text: "g\n- a\n- [ ] b", selection: .init(location: 5, length: 0)))
+  #expect(text == "g\n- [x] a\n- [ ] b")
+  #expect(selection == NSRange(location: 9, length: 0))
+  let both = "g\n- a\n- [ ] b"
+  #expect(
+    try applied(
+      both, OutlineEditing.toggleDone(text: both, selection: .init(location: 2, length: 11))
+    ).0
+      == "g\n- [x] a\n- [x] b")
+}
+
+@Test func toggleDoneClearsWhenAllDoneAndChecksWhenMixed() throws {
+  let done = "- [x] a\n\t- [X] b"
+  #expect(
+    try applied(
+      done, OutlineEditing.toggleDone(text: done, selection: .init(location: 0, length: 16))
+    ).0
+      == "- a\n\t- b")
+  let mixed = "- [x] a\n- b"
+  #expect(
+    try applied(
+      mixed, OutlineEditing.toggleDone(text: mixed, selection: .init(location: 0, length: 11))
+    ).0
+      == "- [x] a\n- [x] b")
+  #expect(
+    try applied(
+      "- [x]", OutlineEditing.toggleDone(text: "- [x]", selection: .init(location: 5, length: 0))
+    ).0
+      == "- ")
+}
+
+@Test func toggleDoneIgnoresGroupsAndKeepsCursorOnText() throws {
+  #expect(OutlineEditing.toggleDone(text: "group", selection: .init(location: 2, length: 0)) == nil)
+  let (_, selection) = try applied(
+    "- [x] task",
+    OutlineEditing.toggleDone(text: "- [x] task", selection: .init(location: 8, length: 0)))
+  #expect(selection == NSRange(location: 4, length: 0))
+}
+
+@Test func moveBlockSwapsSiblingsWithTheirSubtasks() throws {
+  let text = "g\n- a\n\t- a1\n- b\n\t- b1\n\t\t- b2\n- c"
+  let cursor = (text as NSString).range(of: "- b").location + 2
+  let (up, upSelection) = try applied(
+    text,
+    OutlineEditing.moveBlock(text: text, selection: .init(location: cursor, length: 0), up: true))
+  #expect(up == "g\n- b\n\t- b1\n\t\t- b2\n- a\n\t- a1\n- c")
+  #expect(upSelection == NSRange(location: 4, length: 0))
+  let (down, downSelection) = try applied(
+    text,
+    OutlineEditing.moveBlock(text: text, selection: .init(location: cursor, length: 0), up: false))
+  #expect(down == "g\n- a\n\t- a1\n- c\n- b\n\t- b1\n\t\t- b2")
+  #expect((down as NSString).substring(from: downSelection.location).hasPrefix("b\n\t- b1"))
+}
+
+@Test func moveBlockStaysUnderItsParent() {
+  let text = "g\n- a\n\t- a1\n- b\nh\n- c"
+  func move(_ needle: String, up: Bool) -> TextChange? {
+    let at = (text as NSString).range(of: needle).location
+    return OutlineEditing.moveBlock(text: text, selection: .init(location: at, length: 0), up: up)
+  }
+  #expect(move("- a", up: true) == nil)  // first in its group
+  #expect(move("\t- a1", up: true) == nil)  // only child
+  #expect(move("\t- a1", up: false) == nil)
+  #expect(move("- b", up: false) == nil)  // next line is a group
+  #expect(move("h", up: true) == nil)  // groups don't move
+}
+
+@Test func moveBlockKeepsCRLF() throws {
+  let text = "- a\r\n- b"
+  #expect(
+    try applied(
+      text, OutlineEditing.moveBlock(text: text, selection: .init(location: 6, length: 0), up: true)
+    ).0
+      == "- b\r\n- a")
+}

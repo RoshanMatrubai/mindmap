@@ -1,5 +1,6 @@
 #if DEBUG
-  import Foundation
+  import AppKit
+  import MindmapGraph
 
   /// DEBUG-only launch arguments for the agent debug loop (AGENTS.md). Excluded from Release builds.
   enum DebugLaunch {
@@ -24,6 +25,26 @@
       }
       return text
     }
+
+    /// `-window-size 1400x900` sets the window's content size, for screenshots.
+    @MainActor static func applyWindowSize() {
+      guard let value = UserDefaults.standard.string(forKey: "window-size") else { return }
+      let parts = value.split(separator: "x").compactMap { Double($0) }
+      guard parts.count == 2 else { return }
+      DispatchQueue.main.async {
+        NSApp.windows.first?.setContentSize(NSSize(width: parts[0], height: parts[1]))
+        NSApp.windows.first?.center()
+      }
+    }
+
+    /// `-graph-zoom 3` zooms (animated) once the first graph is shown, to check label sharpness.
+    @MainActor static func zoomOnce(_ view: GraphView) {
+      let factor = UserDefaults.standard.double(forKey: "graph-zoom")
+      guard factor > 0, !zoomed else { return }
+      zoomed = true
+      DispatchQueue.main.async { view.zoom(by: factor) }
+    }
+    @MainActor private static var zoomed = false
 
     /// Without `-use-folder-picker YES`, maps go in a folder inside the dev container: no picker,
     /// no prompts, so the agent debug loop runs unattended. With it, Debug behaves like Release.

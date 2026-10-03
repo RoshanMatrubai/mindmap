@@ -2,6 +2,8 @@
 
 this is a macos based mindmap, similar to formatting on notes but creates a visual mindmap like seen on obsidian.
 
+![mindmap screenshot](docs/screenshot.png)
+
 ## how to use it
 
 type your list on the left. the map draws itself on the right.
@@ -31,14 +33,32 @@ errands
 | `/high` `/medium` `/low` `/chill` | priority |
 | `[[name]]` | a dashed link to another task or group |
 
-- click a group or task to highlight its branch and zoom in. click empty space to zoom back out.
+- click a group or task to highlight its branch and zoom in. click empty space to zoom back out. (coming soon)
 - pinch to zoom, two fingers to move around.
+- drag a node to move it. it stays where you put it until you reshuffle (⇧⌘R).
 - press enter to continue a list, tab to indent, shift+tab to go back out. it works just like notes.
 - press ⌘N for a new map.
-- `/high` tasks can show up in the Calendar app. this is off by default; turn it on in settings (⌘,).
-- the forces panel changes how the map spreads out. hit reshuffle for a new layout.
+- `/high` tasks can show up in the Calendar app. this is off by default; turn it on in settings (⌘,). (coming soon)
+- the forces panel changes how the map spreads out. hit reshuffle for a new layout. (coming soon)
 
 your maps are saved automatically as plain text files in a folder you choose the first time you open the app (we suggest Documents/mindmap, which keeps them private from other apps). nothing is ever saved inside this project folder.
+
+### keyboard shortcuts
+
+| keys | what it does |
+|---|---|
+| return | continue the list |
+| tab / shift+tab | indent / outdent the bullet |
+| ⌘] / ⌘[ | indent / outdent the current or selected bullets |
+| ⇧⌘U | mark the current or selected tasks done, or not done |
+| ⌃⌘↑ / ⌃⌘↓ | move a task and its subtasks up / down |
+| ⌘N | new map |
+| ⇧⌘] / ⇧⌘[ | next / previous map |
+| ⌘= (or ⌘+) / ⌘- | zoom in / out |
+| ⌘0 | fit the whole map |
+| ⇧⌘R | reshuffle (new layout, forgets moved nodes) |
+| arrow keys | move around the map (when the map has focus) |
+| ⌘1 / ⌘2 | focus the editor / the map |
 
 ## how to set it up
 

@@ -92,15 +92,51 @@
         store.activated()
         precondition(
           store.text.contains("unsaved edit"), "dirty activation must preserve local edits")
+        let renamed = try await layoutChecks(store, created: created, title: title)
         store.switchMap(original)
         try await Task.sleep(for: .milliseconds(200))
         precondition(store.currentURL == original && store.text == originalText)
-        try FileManager.default.removeItem(at: created)
+        try FileManager.default.removeItem(at: renamed)
+        try FileManager.default.removeItem(at: LayoutSidecar.url(for: renamed))
         store.activated()
         log.notice(
-          "native store smoke passed: new map, debounced save/rename/parse, live stats, map switch, clean/dirty activation reload"
+          "native store smoke passed: new map, debounced save/rename/parse, live stats, map switch, clean/dirty activation reload, layout sidecar pins/rename/reshuffle"
         )
       } catch { fatalError("native store smoke failed: \(error)") }
+    }
+
+    /// Pins reach the sidecar, survive rebuilds and renames, and reshuffle clears them.
+    private static func layoutChecks(_ store: MapStore, created: URL, title: String) async throws
+      -> URL
+    {
+      try await Task.sleep(for: .milliseconds(1300))
+      let key = "local/unsaved edit"
+      let point = LayoutPoint(x: 321, y: -123)
+      store.pin(key, at: point)
+      try await Task.sleep(for: .milliseconds(800))
+      precondition(LayoutSidecar.load(for: created)?.pins[key] == point, "pin saved to sidecar")
+      store.text += "- more\n"
+      try await Task.sleep(for: .milliseconds(1000))
+      guard let layout = store.graph?.layout,
+        let index = layout.model.nodes.firstIndex(where: { $0.pathKey == key })
+      else { preconditionFailure("rebuilt layout missing") }
+      precondition(
+        layout.nodes[index].x == point.x && layout.nodes[index].y == point.y,
+        "pinned node stays across rebuilds")
+      store.text = "Renamed " + store.text
+      try await Task.sleep(for: .milliseconds(2000))
+      guard let renamed = store.currentURL, renamed != created else {
+        preconditionFailure("map was not renamed")
+      }
+      precondition(LayoutSidecar.load(for: renamed)?.pins[key] == point, "sidecar follows rename")
+      precondition(LayoutSidecar.load(for: created) == nil, "old sidecar is gone")
+      let seed = LayoutSidecar.load(for: renamed)?.seed
+      store.reshuffle()
+      try await Task.sleep(for: .milliseconds(800))
+      let shuffled = LayoutSidecar.load(for: renamed)
+      precondition(
+        shuffled?.pins.isEmpty == true && shuffled?.seed != seed, "reshuffle clears pins")
+      return renamed
     }
 
     private static func fileChecks() async {

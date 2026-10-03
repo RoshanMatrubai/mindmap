@@ -5,8 +5,21 @@ import AppKit
 final class AppLifecycle: NSObject, NSApplicationDelegate {
   static weak var store: MapStore?
 
+  /// ⌘+ (⇧⌘= or keypad +) also zooms in; a menu item can hold only one of ⌘= and ⌘+.
+  func applicationDidFinishLaunching(_ notification: Notification) {
+    NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+      guard event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "+" else {
+        return event
+      }
+      Self.store?.graphView?.zoomIn()
+      return nil
+    }
+  }
+
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-    guard let store = Self.store, store.hasUnsavedEdits else { return .terminateNow }
+    guard let store = Self.store, store.hasUnsavedEdits || store.hasUnsavedLayout else {
+      return .terminateNow
+    }
     Task { sender.reply(toApplicationShouldTerminate: await store.finishSaving()) }
     return .terminateLater
   }
