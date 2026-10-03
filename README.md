@@ -2,8 +2,6 @@
 
 this is a macos based mindmap, similar to formatting on notes but creates a visual mindmap like seen on obsidian.
 
-![mindmap screenshot](docs/screenshot.png)
-
 ## how to use it
 
 type your list on the left. the map draws itself on the right.
