@@ -1,0 +1,142 @@
+sample map
+
+garden
+- [x] water tomatoes /today
+- fix the fence /saturday /high
+	- buy nails
+	- borrow a hammer
+- plant herbs
+	- basil
+	- mint
+	- thyme
+- compost bin [[missing bin]]
+- trim hedges /low
+kitchen
+- descale kettle
+- sort spice rack
+- deep clean oven /sunday /medium
+	- soak racks
+	- wipe door
+- restock pantry [[market run]]
+market run
+- bread
+- apples
+- oat milk
+- coffee /tomorrow
+- batteries [[bike]]
+bike
+- pump tyres
+- oil chain /friday
+- replace brake pads /high
+	- order pads
+	- watch repair video
+- new bell
+workshop
+- tidy workbench
+- build shelf /medium
+	- measure wall
+	- cut boards
+		- borrow saw [[fix the fence]]
+		- sand edges
+	- mount brackets
+- label drawers
+- sharpen chisels /chill
+book club
+- finish the mystery novel /thursday
+- pick next month's book
+- host meeting /friday /medium
+	- send invites
+	- bake cookies [[kitchen]]
+- update reading list [[library]]
+library
+- return overdue books /today /high
+- renew card
+- reserve audiobook
+- check opening hours
+photography
+- edit trip photos
+	- pick favourites
+	- colour grade
+		- try warm preset
+		- export jpegs
+- clean lens
+- print album /low
+- back up memory cards [[computer]]
+computer
+- update the os
+- clear desktop
+- back up photos
+	- external drive
+	- cloud folder
+- change old passwords /medium
+- unsubscribe from newsletters
+pets
+- vet checkup /wednesday /high
+- buy cat food [[market run]]
+- clean litter box
+- brush the dog
+- refill water fountain
+paperwork
+- file tax forms /monday /high
+	- collect receipts
+	- fill out form
+		- double check totals
+	- mail it
+- renew insurance
+- shred old letters
+fitness
+- morning stretch /today
+- swim twice a week
+	- find goggles
+	- check pool times
+- bike to work [[bike]]
+- try a yoga class /chill
+music
+- learn a new chord
+- tune guitar
+- practice scales /tuesday
+- make a playlist
+	- road trip songs
+	- focus songs
+- replace strings
+friends
+- plan board game night /saturday
+	- pick games
+	- snacks [[market run]]
+- reply to messages
+- send birthday card /wednesday /medium
+- call an old friend
+travel
+- plan spring trip
+	- compare trains
+	- book a room
+	- make packing list
+		- chargers
+		- rain jacket
+- renew passport /high
+- learn basic phrases [[language]]
+language
+- daily vocabulary
+- listen to a podcast
+- find a conversation partner
+- watch a film with subtitles /chill
+volunteering
+- community garden shift /sunday [[garden]]
+- sort donations
+- print flyers /low
+- help at the bake sale
+home office
+- fix wobbly chair
+- new desk lamp
+- organize cables
+	- buy velcro ties
+	- label chargers
+- water the plants [[garden]]
+- recycle old printer
+- side project /low
+	- sketch the idea
+	- write a short plan
+		- goals
+		- first milestone
+	- set up a notebook
+	- share with a friend [[friends]]

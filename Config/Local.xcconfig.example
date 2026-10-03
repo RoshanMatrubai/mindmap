@@ -1,0 +1,7 @@
+// Optional. Copy to Config/Local.xcconfig (gitignored) to sign with your Apple ID's free Personal Team
+// instead of ad-hoc. Not needed for data protection or to keep the maps folder across rebuilds
+// (docs/decisions/0002-data-protection.md). No provisioning profile is needed.
+// Team ID: the OU in `security find-certificate -c "Apple Development" -p | openssl x509 -noout -subject`.
+
+DEVELOPMENT_TEAM = ABCDE12345
+CODE_SIGN_IDENTITY = Apple Development

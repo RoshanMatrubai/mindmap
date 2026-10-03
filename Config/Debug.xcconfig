@@ -1,0 +1,16 @@
+#include "Base.xcconfig"
+
+// Debug = "mindmap dev": separate bundle ID, so a separate sandbox container that never holds real data.
+// MindmapApp.swift refuses to launch a DEBUG build whose bundle ID doesn't end in .dev.
+PRODUCT_BUNDLE_IDENTIFIER = io.github.roshanmatrubai.mindmap.dev
+PRODUCT_NAME = mindmap dev
+INFOPLIST_KEY_CFBundleDisplayName = mindmap dev
+
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG
+SWIFT_OPTIMIZATION_LEVEL = -Onone
+GCC_OPTIMIZATION_LEVEL = 0
+DEBUG_INFORMATION_FORMAT = dwarf
+ONLY_ACTIVE_ARCH = YES
+ENABLE_TESTABILITY = YES
+
+#include? "Local.xcconfig"

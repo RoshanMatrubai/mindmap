@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # Newest generally available macOS runner; its default Xcode is 26.x (the project minimum).
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - name: Toolchain
+        run: xcodebuild -version && swift --version
+      - name: Lint
+        run: make lint
+      - name: Test
+        run: make test
+      - name: Release build
+        run: make build CONFIG=Release
+      - name: Tree is clean (data rule)
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "The build changed or created tracked/untracked files:"
+            git status --porcelain
+            exit 1
+          fi

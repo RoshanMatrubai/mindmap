@@ -1,0 +1,31 @@
+// Shared build settings for the mindmap app target. Debug.xcconfig and Release.xcconfig include this.
+// Keep build settings here, not in project.pbxproj.
+
+SDKROOT = macosx
+MACOSX_DEPLOYMENT_TARGET = 14.0
+SWIFT_VERSION = 6.0
+PRODUCT_MODULE_NAME = mindmap
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 1
+
+GENERATE_INFOPLIST_FILE = YES
+INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.productivity
+INFOPLIST_KEY_NSHumanReadableCopyright = Copyright © 2026 Roshan Matrubai. MIT License.
+
+// App Sandbox on. Maps live in a folder the user picks (security-scoped bookmark); settings and caches
+// in ~/Library/Containers/$(PRODUCT_BUNDLE_IDENTIFIER). See docs/decisions/0002-data-protection.md.
+CODE_SIGN_ENTITLEMENTS = Config/mindmap.entitlements
+
+// Ad-hoc signing by default. Set a team in Config/Local.xcconfig (see Local.xcconfig.example).
+CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY = -
+DEVELOPMENT_TEAM =
+
+ENABLE_USER_SCRIPT_SANDBOXING = YES
+ALWAYS_SEARCH_USER_PATHS = NO
+
+// Keep nested sandboxing disabled so builds also work when an agent runs inside a sandbox
+// (Codex workspace-write mode or the Claude Code sandbox). Only Apple's macro plugins run here.
+// Same reason as --disable-sandbox in the Makefile.
+OTHER_SWIFT_FLAGS = $(inherited) -disable-sandbox
+SWIFT_EMIT_LOC_STRINGS = YES

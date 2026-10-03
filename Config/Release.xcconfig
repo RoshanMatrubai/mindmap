@@ -1,0 +1,16 @@
+#include "Base.xcconfig"
+
+PRODUCT_BUNDLE_IDENTIFIER = io.github.roshanmatrubai.mindmap
+PRODUCT_NAME = mindmap
+INFOPLIST_KEY_CFBundleDisplayName = mindmap
+
+SWIFT_COMPILATION_MODE = wholemodule
+SWIFT_OPTIMIZATION_LEVEL = -O
+DEBUG_INFORMATION_FORMAT = dwarf-with-dsym
+// No get-task-allow: nothing may attach a debugger to the real app and read its maps.
+CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
+
+// App/Debug holds DEBUG-only code and the bundled fixture; none of it ships.
+EXCLUDED_SOURCE_FILE_NAMES = $(SRCROOT)/App/Debug/*
+
+#include? "Local.xcconfig"

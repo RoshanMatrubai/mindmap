@@ -1,0 +1,28 @@
+# Build output (make keeps everything here)
+build/
+.build/
+.swiftpm/
+DerivedData/
+*.xcarchive
+*.dSYM.zip
+*.dSYM
+
+# Xcode per-user state
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+
+# Local signing settings (see Config/Local.xcconfig.example)
+Config/Local.xcconfig
+
+# Data rule: map files never live in the repo, except test fixtures
+*.mindmap
+!Packages/MindmapKit/Tests/Fixtures/*.mindmap
+!App/Debug/*.mindmap
+
+# Claude Code per-user settings
+.claude/settings.local.json
+
+# macOS
+.DS_Store
