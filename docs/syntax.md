@@ -29,6 +29,7 @@ study plan
 | `- [ ] text` | Open task |
 | Tab + `- text` (each tab is one level) | Subtask of the task above. Arbitrary depth |
 | `/monday` through `/sunday`, `/tomorrow`, `/tmrw`, `/today` | Due date |
+| `/10-04-26` | exact due date, month-day-year |
 | `/high`, `/medium` (alias `/med`), `/low`, `/chill` | Priority |
 | `[name]` | Cross link to any node with that name, drawn as a dashed curve. `[[name]]` works the same |
 

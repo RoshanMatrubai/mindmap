@@ -30,6 +30,7 @@ errands
 | `[x]` after the dash | marks a task done |
 | tab, then `- ` | a subtask (tab again to go deeper) |
 | `/today` `/tomorrow` `/friday` | due date |
+| `/10-04-26` | exact due date, month-day-year |
 | `/high` `/medium` `/low` `/chill` | priority |
 | `[name]` | a dashed link to another task or group (`[[name]]` works too) |
 

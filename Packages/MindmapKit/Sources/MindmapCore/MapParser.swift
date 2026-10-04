@@ -59,7 +59,7 @@ public enum MapParser {
         continue
       }
       let parts = lineParts(line.text)
-      let tokens = scanTokens(line.text, parts: parts)
+      let tokens = scanTokens(line.text, parts: parts, calendar: calendar)
       let content = line.text as NSString
       var removals = tokens.map(\.range)
       if parts.contentStart > 0 {
@@ -117,7 +117,8 @@ public enum MapParser {
         let raw = content.substring(with: token.range)
         switch token.kind {
         case .due:
-          if let day = dueDays[String(raw.dropFirst()).lowercased()] {
+          let word = String(raw.dropFirst()).lowercased()
+          if let day = dueDays[word] ?? exactDueDay(word, calendar: calendar) {
             due = DueDate(day: day, rawToken: raw)
           }
         case .priority(let value): priority = value
@@ -225,7 +226,25 @@ public enum MapParser {
     return result
   }
 
-  private static func scanTokens(_ line: String, parts: LineParts) -> [MetadataToken] {
+  private static func exactDueDay(_ word: String, calendar: Calendar) -> Date? {
+    let fields = word.split(separator: "-", omittingEmptySubsequences: false)
+    guard fields.count == 3, fields[0].count == 2, fields[1].count == 2,
+      fields[2].count == 2 || fields[2].count == 4,
+      fields.allSatisfy({ $0.utf8.allSatisfy { $0 >= 48 && $0 <= 57 } }),
+      let month = Int(fields[0]), let day = Int(fields[1]), let rawYear = Int(fields[2])
+    else { return nil }
+    let year = fields[2].count == 2 ? 2000 + rawYear : rawYear
+    guard year > 0,
+      let date = calendar.date(from: DateComponents(year: year, month: month, day: day))
+    else { return nil }
+    let resolved = calendar.dateComponents([.year, .month, .day], from: date)
+    guard resolved.year == year, resolved.month == month, resolved.day == day else { return nil }
+    return calendar.startOfDay(for: date)
+  }
+
+  private static func scanTokens(
+    _ line: String, parts: LineParts, calendar: Calendar = Calendar(identifier: .gregorian)
+  ) -> [MetadataToken] {
     let units = Array(line.utf16)
     let source = line as NSString
     var result: [MetadataToken] = []
@@ -250,7 +269,7 @@ public enum MapParser {
         let kind: MetadataKind?
         if let priority = priorityWords[word] {
           kind = .priority(priority)
-        } else if dueWords[word] != nil {
+        } else if dueWords[word] != nil || exactDueDay(word, calendar: calendar) != nil {
           kind = .due
         } else {
           kind = nil
