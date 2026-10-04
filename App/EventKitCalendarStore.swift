@@ -7,17 +7,18 @@ import MindmapCore
 actor EventKitCalendarStore: CalendarStore {
   private struct Ownership: Codable {
     var identifier: String
+    /// The account the calendar was created in; nil in files written before it was recorded.
+    var source: String?
     var earliest: Date
     var latest: Date
   }
 
   private enum StoreError: LocalizedError {
-    case accessRequired, noDefaultSource, missingIdentifier, invalidDate, ownershipConflict
+    case accessRequired, missingIdentifier, invalidDate, ownershipConflict
 
     var errorDescription: String? {
       switch self {
       case .accessRequired: "Calendar full access is required."
-      case .noDefaultSource: "No default calendar source is available."
       case .missingIdentifier: "Calendar did not return an event identifier."
       case .invalidDate: "The calendar event date is invalid."
       case .ownershipConflict: "The selected maps folder already owns a different calendar."
@@ -92,19 +93,37 @@ actor EventKitCalendarStore: CalendarStore {
     }
   }
 
-  func ensureCalendar() throws {
+  @discardableResult func ensureCalendar() throws -> String {
     try requireAccess()
-    if try ownedCalendar() != nil { return }
-    let store = store()
-    guard let source = store.defaultCalendarForNewEvents?.source else {
-      throw StoreError.noDefaultSource
+    if let calendar = try ownedCalendar() {
+      // EKCalendar.source is implicitly unwrapped; never let it trap.
+      return calendar.source.map(Self.source)?.title ?? name
     }
-    let calendar = EKCalendar(for: .event, eventStore: store)
-    calendar.title = name
-    calendar.source = source
-    try store.saveCalendar(calendar, commit: true)
+    // The stored calendar or its account is gone, or none was made yet: create a new one.
+    let store = store()
+    let candidates = CalendarSource.candidates(
+      remembered: ownership?.source,
+      preferred: store.defaultCalendarForNewEvents?.source.map(Self.source),
+      in: store.sources.map(Self.source))
+    let (chosen, calendar) = try CalendarSource.create(in: candidates) { candidate in
+      guard let source = store.sources.first(where: { $0.sourceIdentifier == candidate.identifier })
+      else { throw StoreError.missingIdentifier }
+      let calendar = EKCalendar(for: .event, eventStore: store)
+      calendar.title = name
+      calendar.source = source
+      do {
+        try store.saveCalendar(calendar, commit: true)
+      } catch {
+        // Drop the refused calendar so it isn't retried with the next account's commit.
+        store.reset()
+        throw error
+      }
+      return calendar
+    }
     let today = Calendar.current.startOfDay(for: Date())
-    ownership = Ownership(identifier: calendar.calendarIdentifier, earliest: today, latest: today)
+    ownership = Ownership(
+      identifier: calendar.calendarIdentifier, source: chosen.identifier, earliest: today,
+      latest: today)
     do {
       try saveOwnership()
     } catch {
@@ -113,6 +132,7 @@ actor EventKitCalendarStore: CalendarStore {
       ownership = nil
       throw error
     }
+    return chosen.title
   }
 
   func events() throws -> [CalendarEventRecord] {
@@ -159,6 +179,19 @@ actor EventKitCalendarStore: CalendarStore {
       try FileManager.default.removeItem(at: ownershipURL)
     }
     ownership = nil
+  }
+
+  private static func source(_ source: EKSource) -> CalendarSource {
+    let kind: CalendarSource.Kind =
+      switch source.sourceType {
+      case .local: .local
+      case .calDAV: .calDAV
+      case .subscribed, .birthdays: .readOnly
+      default: .other
+      }
+    return CalendarSource(
+      identifier: source.sourceIdentifier,
+      title: kind == .local ? "On My Mac" : source.title, kind: kind)
   }
 
   private var ownershipURL: URL { folder.appendingPathComponent(".calendar-store.json") }
@@ -219,7 +252,7 @@ actor EventKitCalendarStore: CalendarStore {
       let predicate = store().predicateForEvents(
         withStart: cursor, end: upper, calendars: [calendar])
       for event in store().events(matching: predicate) {
-        guard event.calendar.calendarIdentifier == calendar.calendarIdentifier,
+        guard event.calendar?.calendarIdentifier == calendar.calendarIdentifier,
           let identifier = event.eventIdentifier
         else { continue }
         result[identifier] = event
@@ -236,8 +269,13 @@ actor EventKitCalendarStore: CalendarStore {
       let end = civil.date(byAdding: .day, value: 1, to: start)
     else { throw StoreError.invalidDate }
     // Record bounds before committing an event, including a crash between the two writes.
-    ownership?.earliest = min(ownership?.earliest ?? start, start)
-    ownership?.latest = max(ownership?.latest ?? start, start)
+    // Copy first: `ownership?.x = f(ownership)` reads the property during its own write,
+    // which Swift's exclusivity check traps on.
+    if var bounds = ownership {
+      bounds.earliest = min(bounds.earliest, start)
+      bounds.latest = max(bounds.latest, start)
+      ownership = bounds
+    }
     try saveOwnership()
     event.calendar = calendar
     event.title = value.title

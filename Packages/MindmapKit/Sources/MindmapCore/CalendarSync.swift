@@ -21,9 +21,10 @@ public struct CalendarEvent: Sendable, Equatable {
   public static func tagURL(mapFileName: String, pathKey: String) -> URL {
     let allowed = CharacterSet(
       charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
-    let map = mapFileName.addingPercentEncoding(withAllowedCharacters: allowed)!
-    let path = pathKey.addingPercentEncoding(withAllowedCharacters: allowed)!
-    return URL(string: "mindmap://\(map)/\(path)")!
+    let map = mapFileName.addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
+    let path = pathKey.addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
+    // Only unreserved ASCII remains, so this always parses. The fallback has no identity.
+    return URL(string: "mindmap://\(map)/\(path)") ?? URL(filePath: "/")
   }
 
   public static func identity(from url: URL) -> (mapFileName: String, pathKey: String)? {

@@ -284,4 +284,61 @@ struct CalendarTests {
     #expect(result.first { $0.identifier == records[0].identifier } == records[0])
   }
 
+  private let google = CalendarSource(identifier: "google", title: "Google", kind: .calDAV)
+  private let iCloud = CalendarSource(identifier: "icloud", title: "iCloud", kind: .calDAV)
+  private let birthdays = CalendarSource(identifier: "bday", title: "Birthdays", kind: .readOnly)
+
+  @Test func refusedDefaultAccountFallsBackToICloud() async throws {
+    let store = FakeCalendarStore(
+      access: .fullAccess, defaultSource: google,
+      sources: [birthdays, FakeCalendarStore.onMyMac, google, iCloud], refusing: ["google"])
+    #expect(try await store.ensureCalendar() == "iCloud")
+    let records = try await store.apply(plan([map("Map\nGroup\n- Task /high /today")]))
+    #expect(records.count == 1)
+    #expect(await store.calendarSource == iCloud)
+  }
+
+  @Test func noDefaultCalendarUsesFallbackOrder() async throws {
+    let store = FakeCalendarStore(
+      access: .fullAccess, defaultSource: nil, sources: [birthdays, FakeCalendarStore.onMyMac])
+    #expect(try await store.ensureCalendar() == "On My Mac")
+    #expect(
+      CalendarSource.candidates(
+        remembered: nil, preferred: nil,
+        in: [google, birthdays, FakeCalendarStore.onMyMac, iCloud]
+      ).map(\.identifier)
+        == ["icloud", "local", "google"])
+  }
+
+  @Test func missingStoredCalendarIsRecreated() async throws {
+    let source = map("Map\nGroup\n- Task /high /today")
+    let store = FakeCalendarStore(access: .fullAccess)
+    let records = try await store.apply(plan([source]))
+    let saved = map(
+      "Map\nGroup\n- Task /high /today",
+      sidecar: CalendarSync.sidecar(for: source, records: records))
+    await store.deleteCalendarOutside()
+    #expect(try await store.ensureCalendar() == "On My Mac")
+    let recreated = try await store.apply(plan([saved], try await store.events()))
+    #expect(recreated.count == 1)
+    #expect(await store.calendarExists)
+  }
+
+  @Test func everyAccountRefusingReportsHowToFix() async throws {
+    let store = FakeCalendarStore(
+      access: .fullAccess, defaultSource: google, sources: [google, birthdays],
+      refusing: ["google"])
+    await #expect(throws: CalendarSourceFailure.noWritableAccount) {
+      try await store.ensureCalendar()
+    }
+    await #expect(throws: CalendarSourceFailure.noWritableAccount) {
+      try await store.apply(plan([map("Map\nGroup\n- Task /high /today")]))
+    }
+    #expect(await store.calendarExists == false)
+    #expect(
+      CalendarSourceFailure.noWritableAccount.localizedDescription
+        == "couldn't create a calendar in any account: add an iCloud or On My Mac calendar "
+        + "account, then try again")
+  }
+
 }

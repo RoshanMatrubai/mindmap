@@ -38,8 +38,9 @@ actor CalendarCoordinator {
     return try await backend.accessState()
   }
 
+  /// Returns the synced records and the name of the account holding the calendar.
   func sync(in folder: URL, open: (URL, MapModel)?, file: URL? = nil, all: Bool) async throws
-    -> [CalendarEventRecord]
+    -> (records: [CalendarEventRecord], account: String)
   {
     let backend = store(in: folder)
     guard try await backend.accessState() == .fullAccess else {
@@ -66,7 +67,7 @@ actor CalendarCoordinator {
         fileName: url.lastPathComponent, model: model,
         sidecar: CalendarSidecar.load(for: url) ?? CalendarSidecar())
     }
-    try await backend.ensureCalendar()
+    let account = try await backend.ensureCalendar()
     let records = try await backend.events()
     let operations = CalendarSync.plan(
       maps: maps, current: records, today: today, calendar: calendar, removeOrphans: all)
@@ -74,7 +75,7 @@ actor CalendarCoordinator {
     for (url, map) in zip(urls, maps) {
       try CalendarSync.sidecar(for: map, records: result).save(for: url)
     }
-    return result
+    return (result, account)
   }
 
   func remove(in folder: URL) async throws {
@@ -98,6 +99,7 @@ final class CalendarSyncController {
   private(set) var enabled = UserDefaults.standard.bool(forKey: "calendarSyncEnabled")
   private(set) var access = CalendarAccessState.notDetermined
   private(set) var records: [CalendarEventRecord] = []
+  private(set) var account: String?
   private(set) var lastError: String?
   private(set) var busy = false
   var confirmingRemoval = false
@@ -115,7 +117,9 @@ final class CalendarSyncController {
     case .denied: state = "access denied"
     case .restricted: state = "access restricted"
     }
-    return "\(state) · \(records.count) synced events" + (lastError.map { " · " + $0 } ?? "")
+    let events = "\(records.count) synced event" + (records.count == 1 ? "" : "s")
+    return [state, events, account.map { "in " + $0 }, lastError].compactMap { $0 }
+      .joined(separator: " · ")
   }
 
   var removalMessage: String {
@@ -175,7 +179,7 @@ final class CalendarSyncController {
       self.access = try await self.worker.access(in: folder, request: false)
       if self.enabled {
         guard self.access == .fullAccess else { throw CalendarSyncError.accessDenied }
-        self.records = try await self.worker.sync(in: folder, open: nil, all: true)
+        (self.records, self.account) = try await self.worker.sync(in: folder, open: nil, all: true)
       }
     }
   }
@@ -191,7 +195,7 @@ final class CalendarSyncController {
       guard self.access == .fullAccess else { throw CalendarSyncError.accessDenied }
       self.enabled = true
       UserDefaults.standard.set(true, forKey: "calendarSyncEnabled")
-      self.records = try await self.worker.sync(in: folder, open: nil, all: true)
+      (self.records, self.account) = try await self.worker.sync(in: folder, open: nil, all: true)
     }
   }
 
@@ -202,6 +206,7 @@ final class CalendarSyncController {
       self.enabled = false
       UserDefaults.standard.set(false, forKey: "calendarSyncEnabled")
       self.records = []
+      self.account = nil
     }
   }
 
@@ -210,7 +215,8 @@ final class CalendarSyncController {
     enqueue {
       guard self.enabled else { return }
       self.access = try await self.worker.access(in: folder, request: false)
-      self.records = try await self.worker.sync(in: folder, open: open, file: file, all: all)
+      (self.records, self.account) = try await self.worker.sync(
+        in: folder, open: open, file: file, all: all)
     }
   }
 
