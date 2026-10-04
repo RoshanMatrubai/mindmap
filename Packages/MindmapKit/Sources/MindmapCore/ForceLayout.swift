@@ -7,6 +7,8 @@ public enum UrgencyMode: Sendable, Equatable {
 public struct ForceParams: Sendable, Equatable {
   public var center = 0.04
   public var repel = 450.0
+  /// Pairs farther apart than this don't repel.
+  public static let repelRange = 250.0
   public var linkForce = 0.6
   public var linkDistance = 70.0
   public var urgency = UrgencyMode.pullIn
@@ -248,14 +250,14 @@ struct Simulation: Sendable {
     alpha += (0 - alpha) * 0.02
   }
 
-  /// Pairs beyond 600 units are ignored, so above 300 nodes a 600-unit grid finds exactly the
+  /// Pairs beyond `repelRange` are ignored, so above 300 nodes a grid of that cell size finds exactly the
   /// same pairs as the prototype's all-pairs loop. Unsafe buffers keep the hot loop free of
   /// bounds and exclusivity checks.
   private mutating func repel(_ al: Double) {
     let strength = params.repel * al
     let n = count
     guard n > 0 else { return }
-    let grid = n > 300 ? Grid(x: x, y: y, cell: 600) : nil
+    let grid = n > 300 ? Grid(x: x, y: y, cell: ForceParams.repelRange) : nil
     var rng = random
     x.withUnsafeBufferPointer { x in
       y.withUnsafeBufferPointer { y in
@@ -271,7 +273,7 @@ struct Simulation: Sendable {
                 var dx = px[j] - px[i]
                 var dy = py[j] - py[i]
                 var d2 = dx * dx + dy * dy
-                if d2 > 360_000 { return }
+                if d2 > ForceParams.repelRange * ForceParams.repelRange { return }
                 if d2 < 1 {
                   dx = rng.next() - 0.5
                   dy = rng.next() - 0.5

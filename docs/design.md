@@ -48,7 +48,7 @@ This is the heart of the look: a d3-force style simulation, animated when needed
 
 Each tick, with `alpha` decaying from 1 toward 0 by 2% per tick:
 
-1. **Repel.** Every pair pushes apart with force `repel × alpha / distance²`, ignored beyond 600 units. Group pairs get 1.4× weight. Use Barnes-Hut or a uniform grid once nodes exceed about 300; the prototype is O(n²).
+1. **Repel.** Every pair pushes apart with force `repel × alpha / distance²`, ignored beyond 250 units. Group pairs get 1.4× weight. Use Barnes-Hut or a uniform grid once nodes exceed about 300; the prototype is O(n²).
 2. **Springs.** Each parent and child pair pulls toward `link distance`, scaled by `link force`. As in the prototype's code, a group→task spring (prototype depth 2, our depth 1) is 1.5× that and every deeper level 1×. Cross links are springs at 12% strength and 3× distance.
 3. **Center gravity.** Pulls every node toward the origin with strength `center`.
 4. **Urgency force.** Each node gets an urgency score from 0 to 1: due-date closeness `(8 − daysUntilDue) / 8`, plus 0.5 for high or 0.25 for medium priority, capped at 1. Parents inherit 85% of their most urgent child.
@@ -87,7 +87,7 @@ Step 3a (motion):
 | Delete text | Remove the deleted node's layer. A quick fade is allowed. Nothing else moves. |
 | Rename | Keep the node's position. If the grown label overlaps a neighbor, run the same collision cascade. |
 | Change level or move lines | Match the existing node, start at its old position and glide toward its new parent. Resolve overlaps locally. |
-| Drag | The dragged node follows the cursor. Its subtree follows on springs with the normal layout constants. Other nodes move only after an overlap joins them to the affected set. On release, pin the dragged node, settle and freeze. |
+| Drag | The dragged node follows the cursor. With ⇧ held (step 3b), its subtree follows on springs with the normal layout constants; a plain drag moves only the node. Other nodes move only after an overlap joins them to the affected set. On release, pin the dragged node, settle and freeze. |
 | Open or switch maps | Display saved positions instantly without animation. Place nodes absent from the sidecar using the add-text rule. |
 | Reshuffle or new map without saved positions | Animate the full prototype settle, then freeze. Ease the camera to fit until the user pans or zooms, matching the prototype's `follow` behavior. Reshuffle clears pins. |
 | Done toggle | ⇧⌘X replaces ⇧⌘U. The Outline menu owns the shortcut, including while a text view has focus. |
@@ -98,7 +98,29 @@ Local relaxation runs springs and repulsion for new, moved and dragged nodes, an
 
 An NSView display link exists only while the graph is moving or a drag is active, and stops as soon as the graph freezes. Simulation ticks run off the main thread at a fixed 120 ticks per second, independent of display refresh rate. The main thread applies layer positions once per display frame with implicit Core Animation actions disabled. Occluded windows pause the simulation. Worker frames, snapshots and freeze or pin callbacks carry the document they belong to; after a map switch, results for the previous map are dropped. Labels rasterize off the main thread and cache by text, font, size, scale and style; unchanged node layers are reused.
 
-Step 3b (planned): selection and highlighting, camera fit to a selection, editor↔graph sync, the detail panel, adding and removing nodes from the graph and arrow-key selection navigation. Return adds a task after the selected branch; Tab adds the last child, followed by inline naming. Double-click empty canvas adds a group. Context menus expose the same actions. Delete removes the node and descendants with shared editor undo.
+Step 3b (built): selection and highlighting, camera fit to a selection, editor↔graph sync, the detail panel, adding, renaming and removing nodes from the graph and arrow-key selection navigation. The text stays the single source of truth: every graph edit is one text replacement through the editor (one undo step in the editor's undo stack, autosaved, re-parsed at once).
+
+| # | Topic | Decision |
+|---|---|---|
+| 1 | Drag | Plain drag moves only the dragged node (crowded neighbors are still pushed aside). ⇧-drag moves the node with its whole subtree. Both pin on release |
+| 2 | Detail panel | Always visible along the bottom of the graph pane (at least 84 pt, prototype styling). A short hint when nothing is selected |
+| 3 | Editor cursor → graph | Moving the cursor onto a line highlights its node without moving the camera. Only graph clicks, arrow keys and linked names move the camera. A line with no node (title, blank) clears the highlight |
+| 4 | Rename on the graph | Double-click a node or its label to edit the name inline: Return saves, Esc cancels, clicking elsewhere saves. Metadata (done marker, due date, priority, links) is kept and follows the name. Double-click empty canvas adds a group at that spot |
+| 5 | New node being named | A new node is written to the text only when its name is committed, so Esc (or an empty name) leaves the text untouched. Its dot shows while naming |
+| 6 | Done checkbox | In the detail panel for leaf tasks; toggles `[x]` in the text |
+| 7 | Priority shortcuts | With a node selected: ⌥⌘1 high, ⌥⌘2 medium, ⌥⌘3 low, ⌥⌘4 chill, ⌥⌘0 clear. Writes, replaces or removes the `/tag` |
+| 8 | "Linked to" | Clicking a linked name in the detail panel selects that node, with a camera move |
+| 9 | Map switch | Clears the selection |
+
+Other step 3b rules:
+
+- Return adds a task after the selected node's whole branch (after a group, a new group); Tab adds its last child. The new node's dot appears by its parent at the least crowded spot (the spawn rule), the name is typed there, and the node stays at that spot (it only collides). A double-clicked group stays where it was clicked.
+- Delete removes the node and its subtasks with no confirmation; ⌘Z restores the exact text. Afterwards the deleted task's parent is selected; deleting a group clears the selection.
+- Esc clears the selection. With a selection and the graph focused, arrows move it (↑ parent, ↓ first child, ← → previous and next sibling, groups being siblings of each other, no wrapping); without one they pan. These plain keys, Return, Tab and Delete are menu items enabled only while the graph has focus and something is selected, so the editor keeps them. ⇧⌘X toggles the selected task when the graph has focus.
+- Right-click on a node selects it (no camera move) and offers Add Task, Add Subtask, Rename, Mark Done/Not Done (tasks), Priority ▸ and Delete; on empty canvas, New Group.
+- Clicking empty canvas clears the selection and animates back to fit all only when something was selected, so double-clicking empty space to add a group doesn't zoom out first.
+- The detail panel shows the name and path lowercased, like the graph. The group's task count is its leaf tasks (prototype `desc()`); next due and high priority look at every open task in it, including tasks with subtasks (the prototype's leaf-only rule hid a `/high` parent task). Tasks with subtasks show the task fields; only leaves get the checkbox.
+- Highlighting changes layer properties only. Node dots are plain layers (fill and border colors); labels are a canvas-colored halo raster plus a glyph raster in `#f2f2f7` whose opacity gives each label color. Highlighted nodes move to a container above the highlighted edges, and highlighted edges and cross links (`#6a4ff0`, 1.3 px at 90% for cross links, as in the prototype) get their own shape layers. Dimmed nodes don't use group opacity, which would render each one offscreen.
 
 ## Settings
 

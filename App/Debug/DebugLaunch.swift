@@ -46,6 +46,27 @@
     }
     @MainActor private static var zoomed = false
 
+    /// `-select-node "garden"` selects that node once the first graph is shown, like a click;
+    /// `-rename-node YES` then opens its inline name field. For screenshots.
+    @MainActor static func selectOnce(_ view: GraphView, _ store: MapStore) {
+      guard let name = UserDefaults.standard.string(forKey: "select-node"), !selected else {
+        return
+      }
+      selected = true
+      Task {
+        try? await Task.sleep(for: .seconds(1))
+        guard let index = view.scene.layout?.model.nodes.firstIndex(where: { $0.name == name })
+        else { return log.error("select-node \(name, privacy: .public) not found") }
+        view.select(index, camera: true)
+        store.graphSelected(index)
+        if UserDefaults.standard.bool(forKey: "rename-node") {
+          try? await Task.sleep(for: .milliseconds(500))
+          view.beginRename(index)
+        }
+      }
+    }
+    @MainActor private static var selected = false
+
     /// `-reshuffle-after 3` reshuffles once, that many seconds after launch, to capture the settle.
     @MainActor static func reshuffleOnce(_ store: MapStore) {
       let seconds = UserDefaults.standard.double(forKey: "reshuffle-after")

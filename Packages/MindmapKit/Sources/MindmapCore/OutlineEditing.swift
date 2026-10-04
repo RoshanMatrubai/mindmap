@@ -355,3 +355,199 @@ public enum OutlineEditing {
     return minimum == 4 ? 4 : 2
   }
 }
+
+/// Edits made from the graph. `model` must be the parse of `text`; node ranges come from it.
+/// Each result is one replacement, so it is one undo step in the editor. The selection lands on
+/// the line the graph should select next.
+extension OutlineEditing {
+  /// Return on the graph: a new line after `node`'s whole branch at the same level. After a group
+  /// that is a new group.
+  public static func insertSibling(text: String, model: MapModel, after node: Int, name: String)
+    -> TextChange?
+  {
+    guard model.nodes.indices.contains(node), let name = cleaned(name) else { return nil }
+    let n = model.nodes[node]
+    let prefix =
+      n.depth == 0
+      ? "" : (dashIndent(text, n) ?? String(repeating: "\t", count: n.depth - 1)) + "- "
+    return insertLine(text, at: branchEnd(model, node), prefix + name)
+  }
+
+  /// Tab on the graph: a new last child of `node`.
+  public static func appendChild(text: String, model: MapModel, to node: Int, name: String)
+    -> TextChange?
+  {
+    guard model.nodes.indices.contains(node), let name = cleaned(name) else { return nil }
+    let n = model.nodes[node]
+    let indent: String
+    if let first = n.children.first, let own = dashIndent(text, model.nodes[first]) {
+      indent = own
+    } else if n.depth == 0 {
+      indent = ""
+    } else {
+      indent = (dashIndent(text, n) ?? String(repeating: "\t", count: n.depth - 1)) + "\t"
+    }
+    return insertLine(text, at: branchEnd(model, node), indent + "- " + name)
+  }
+
+  /// Double-click on empty canvas: a new group at the end of the map.
+  public static func appendGroup(text: String, name: String) -> TextChange? {
+    guard let name = cleaned(name) else { return nil }
+    let source = text as NSString
+    let newline = text.contains("\r\n") ? "\r\n" : "\n"
+    // The first non-empty line is the title, never a group.
+    let hasTitle = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    let last = source.length == 0 ? 10 : source.character(at: source.length - 1)
+    let open = last == 10 || last == 13
+    let lead = (open ? "" : newline) + (hasTitle ? "" : "untitled map" + newline)
+    let start = source.length + (lead as NSString).length
+    return TextChange(
+      range: NSRange(location: source.length, length: 0), replacement: lead + name + newline,
+      selection: NSRange(location: start, length: (name as NSString).length))
+  }
+
+  /// Replaces only the name, keeping indentation, bullet, done marker, due date, priority and
+  /// links (which follow the name, in their original order).
+  public static func rename(text: String, model: MapModel, node: Int, to name: String)
+    -> TextChange?
+  {
+    guard model.nodes.indices.contains(node), let name = cleaned(name) else { return nil }
+    let n = model.nodes[node]
+    if n.sourceRange.length == 0 {
+      // The implicit `loose` group becomes a real group line above its first bullet.
+      return insertLine(text, before: n.sourceRange.location, name)
+    }
+    let line = (text as NSString).substring(with: n.sourceRange)
+    let ns = line as NSString
+    let tokens = MapParser.metadataTokens(in: line)
+    var prefixEnd = 0
+    while prefixEnd < ns.length, [9, 32].contains(ns.character(at: prefixEnd)) { prefixEnd += 1 }
+    for token in tokens {
+      switch token.kind {
+      case .bullet, .doneMarker:
+        prefixEnd = max(prefixEnd, NSMaxRange(token.range))
+        while prefixEnd < ns.length, [9, 32].contains(ns.character(at: prefixEnd)) {
+          prefixEnd += 1
+        }
+      default: break
+      }
+    }
+    let kept = tokens.filter {
+      switch $0.kind {
+      case .due, .priority, .link: true
+      case .bullet, .doneMarker: false
+      }
+    }.map { " " + ns.substring(with: $0.range) }
+    let replacement = ns.substring(to: prefixEnd) + name + kept.joined()
+    return TextChange(
+      range: n.sourceRange, replacement: replacement,
+      selection: NSRange(location: n.sourceRange.location, length: (replacement as NSString).length)
+    )
+  }
+
+  /// Delete on the graph: the node's line and its whole branch, with one line ending.
+  public static func deleteBranch(text: String, model: MapModel, node: Int) -> TextChange? {
+    guard model.nodes.indices.contains(node) else { return nil }
+    let source = text as NSString
+    let start = model.nodes[node].sourceRange.location
+    var end = branchEnd(model, node)
+    var location = start
+    if end < source.length {
+      end += lineBreakLength(source, at: end)
+    } else if start > 0 {
+      // The last line has no ending of its own: take the one before it.
+      location =
+        start
+        - (start >= 2 && source.substring(with: NSRange(location: start - 2, length: 2)) == "\r\n"
+          ? 2 : 1)
+    }
+    let parent = model.nodes[node].parent.map { model.nodes[$0].sourceRange }
+    return TextChange(
+      range: NSRange(location: location, length: end - location), replacement: "",
+      selection: parent ?? NSRange(location: location, length: 0))
+  }
+
+  /// ⌥⌘1–4 and ⌥⌘0: writes, replaces or removes the node's `/priority` word.
+  public static func setPriority(
+    text: String, model: MapModel, node: Int, _ priority: MapPriority?
+  ) -> TextChange? {
+    guard model.nodes.indices.contains(node), model.nodes[node].sourceRange.length > 0 else {
+      return nil
+    }
+    let range = model.nodes[node].sourceRange
+    let line = (text as NSString).substring(with: range)
+    let ns = line as NSString
+    let found = MapParser.metadataTokens(in: line).filter {
+      if case .priority = $0.kind { return true }
+      return false
+    }.map(\.range)
+    var result = line
+    // Later tokens first, so earlier ranges stay valid. The first one is replaced in place.
+    for (i, token) in found.enumerated().reversed() {
+      if i == 0, let priority {
+        result = (result as NSString).replacingCharacters(in: token, with: "/" + priority.rawValue)
+      } else {
+        let space = token.location > 0 && [9, 32].contains(ns.character(at: token.location - 1))
+        result = (result as NSString).replacingCharacters(
+          in: NSRange(
+            location: token.location - (space ? 1 : 0), length: token.length + (space ? 1 : 0)),
+          with: "")
+      }
+    }
+    if found.isEmpty, let priority { result += " /" + priority.rawValue }
+    guard result != line else { return nil }
+    return TextChange(
+      range: range, replacement: result,
+      selection: NSRange(location: range.location, length: (result as NSString).length))
+  }
+
+  private static func cleaned(_ name: String) -> String? {
+    let line = name.components(separatedBy: .newlines).joined(separator: " ")
+      .trimmingCharacters(in: .whitespaces)
+    return line.isEmpty ? nil : line
+  }
+
+  /// End of the last line in `node`'s branch, before its line ending.
+  private static func branchEnd(_ model: MapModel, _ node: Int) -> Int {
+    var end = NSMaxRange(model.nodes[node].sourceRange)
+    var pending = model.nodes[node].children
+    while let n = pending.popLast() {
+      end = max(end, NSMaxRange(model.nodes[n].sourceRange))
+      pending.append(contentsOf: model.nodes[n].children)
+    }
+    return end
+  }
+
+  /// The leading whitespace of a `- ` bullet line; nil for star bullets and groups.
+  private static func dashIndent(_ text: String, _ node: MapNode) -> String? {
+    let line = (text as NSString).substring(with: node.sourceRange)
+    let indent = line.prefix { $0 == "\t" || $0 == " " }
+    return line.dropFirst(indent.count).hasPrefix("-") ? String(indent) : nil
+  }
+
+  private static func lineBreakLength(_ source: NSString, at offset: Int) -> Int {
+    guard offset < source.length else { return 0 }
+    let c = source.character(at: offset)
+    if c == 13 {
+      return offset + 1 < source.length && source.character(at: offset + 1) == 10 ? 2 : 1
+    }
+    return c == 10 ? 1 : 0
+  }
+
+  /// Inserts `line` as a new line after the end of the line holding `offset`.
+  private static func insertLine(_ text: String, at offset: Int, _ line: String) -> TextChange {
+    let newline = text.contains("\r\n") ? "\r\n" : "\n"
+    let start = offset + (newline as NSString).length
+    return TextChange(
+      range: NSRange(location: offset, length: 0), replacement: newline + line,
+      selection: NSRange(location: start, length: (line as NSString).length))
+  }
+
+  /// Inserts `line` as a new line starting at `offset`, the start of an existing line.
+  private static func insertLine(_ text: String, before offset: Int, _ line: String) -> TextChange {
+    let newline = text.contains("\r\n") ? "\r\n" : "\n"
+    return TextChange(
+      range: NSRange(location: offset, length: 0), replacement: line + newline,
+      selection: NSRange(location: offset, length: (line as NSString).length))
+  }
+}

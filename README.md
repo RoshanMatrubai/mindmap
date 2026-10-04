@@ -33,10 +33,11 @@ errands
 | `/high` `/medium` `/low` `/chill` | priority |
 | `[[name]]` | a dashed link to another task or group |
 
-- click a group or task to highlight its branch and zoom in. click empty space to zoom back out. (coming soon)
+- click a group or task to highlight its branch and zoom in; its line is selected in the editor, and the panel under the map shows its details. click empty space to zoom back out. moving the cursor in the editor highlights that line's node too.
 - pinch or use the mouse wheel to zoom, two fingers to move around.
 - editing adds or removes nodes without rearranging your map.
-- drag a node to move it. its subtasks follow and crowded neighbors move aside. it stays where you put it until you reshuffle (⇧⌘R).
+- you can also edit from the map: select a node, then press return for a new task or tab for a subtask and type its name. double-click a label to rename it, double-click empty space for a new group, press delete to remove a node and its subtasks (⌘Z brings it back), or right-click for the same options. every change is written into the text.
+- drag a node to move it; crowded neighbors move aside. hold shift while dragging to bring its subtasks along. it stays where you put it until you reshuffle (⇧⌘R).
 - press enter to continue a list, tab to indent, shift+tab to go back out. it works just like notes.
 - press ⌘N for a new map.
 - `/high` tasks can show up in the Calendar app. this is off by default; turn it on in settings (⌘,). (coming soon)
@@ -51,15 +52,28 @@ your maps are saved automatically as plain text files in a folder you choose the
 | return | continue the list |
 | tab / shift+tab | indent / outdent the bullet |
 | ⌘] / ⌘[ | indent / outdent the current or selected bullets |
-| ⇧⌘X | mark the current or selected tasks done, or not done |
+| ⇧⌘X | mark the current or selected tasks done, or not done (the selected task when the map has focus) |
 | ⌃⌘↑ / ⌃⌘↓ | move a task and its subtasks up / down |
 | ⌘N | new map |
 | ⇧⌘] / ⇧⌘[ | next / previous map |
 | ⌘= (or ⌘+) / ⌘- | zoom in / out |
 | ⌘0 | fit the whole map |
 | ⇧⌘R | reshuffle (new layout, forgets moved nodes) |
-| arrow keys | move around the map (when the map has focus) |
+| arrow keys | move around the map (when the map has focus and nothing is selected) |
 | ⌘1 / ⌘2 | focus the editor / the map |
+| ⌥⌘1 / ⌥⌘2 / ⌥⌘3 / ⌥⌘4 / ⌥⌘0 | set the selected task's priority to high / medium / low / chill, or clear it |
+
+when the map has focus and a node is selected:
+
+| keys | what it does |
+|---|---|
+| esc | clear the selection |
+| return | add a task after it, then type its name (return saves, esc cancels) |
+| tab | add a subtask under it, then type its name |
+| delete | remove it and its subtasks |
+| ↑ / ↓ | select its parent / its first subtask |
+| ← / → | select the previous / next task at the same level |
+| shift-drag | move it together with its subtasks |
 
 ## how to set it up
 

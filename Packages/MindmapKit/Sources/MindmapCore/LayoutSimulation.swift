@@ -48,10 +48,12 @@ public struct LayoutSimulation: Sendable {
     if model.nodes.isEmpty { forceFreeze() }
   }
 
+  /// `placements` puts new nodes (by index in `model`) at a point instead of spawning them by
+  /// their parent. Placed nodes only collide, so they stay where the graph put them.
   public init(
     previous: GraphLayout, model: MapModel, pins: [String: LayoutPoint] = [:],
-    params: ForceParams = .init(), today: Date, calendar: Calendar,
-    measure: ForceLayout.Measure = ForceLayout.estimate
+    placements: [Int: LayoutPoint] = [:], params: ForceParams = .init(), today: Date,
+    calendar: Calendar, measure: ForceLayout.Measure = ForceLayout.estimate
   ) {
     self.init(
       model: model, seed: previous.seed, params: params, today: today,
@@ -73,7 +75,15 @@ public struct LayoutSimulation: Sendable {
     state.pinned = model.nodes.map { self.pins[$0.pathKey] != nil }
     affected = identity.new.union(identity.moved)
     springNodes = affected
-    for i in identity.new.sorted() { spawn(i) }
+    for i in identity.new.sorted() {
+      if let point = placements[i] {
+        state.x[i] = point.x
+        state.y[i] = point.y
+        springNodes.remove(i)
+      } else {
+        spawn(i)
+      }
+    }
     for i in identity.renamed {
       let old = previous.nodes[identity.newToOld[i]!]
       guard state.hw[i] > old.halfWidth || state.up[i] > old.up || state.dn[i] > old.down else {
@@ -142,12 +152,13 @@ public struct LayoutSimulation: Sendable {
     }
   }
 
-  public mutating func beginDrag(_ index: Int) {
+  /// A plain drag moves only `index`; with `subtree` (⇧-drag) its descendants follow on springs.
+  public mutating func beginDrag(_ index: Int, subtree: Bool = true) {
     guard model.nodes.indices.contains(index) else { return }
     isFullLayout = false
     dragged = index
     dragSubtree = [index]
-    var pending = model.nodes[index].children
+    var pending = subtree ? model.nodes[index].children : []
     while let child = pending.popLast() {
       dragSubtree.insert(child)
       pending.append(contentsOf: model.nodes[child].children)
@@ -203,30 +214,49 @@ public struct LayoutSimulation: Sendable {
 
   private mutating func spawn(_ i: Int) {
     let parent = model.nodes[i].parent
-    let cx = parent.map { state.x[$0] } ?? 0
-    let cy = parent.map { state.y[$0] } ?? 0
-    let distance = state.params.linkDistance * (model.nodes[i].depth == 1 ? 1.5 : 1)
-    var best = (x: cx + distance, y: cy, score: Double.infinity)
+    let point = leastCrowded(
+      around: LayoutPoint(x: parent.map { state.x[$0] } ?? 0, y: parent.map { state.y[$0] } ?? 0),
+      distance: state.params.linkDistance * (model.nodes[i].depth == 1 ? 1.5 : 1),
+      box: (state.hw[i], state.up[i], state.dn[i]), skipping: i)
+    state.x[i] = point.x
+    state.y[i] = point.y
+  }
+
+  /// Where a node added from the graph appears before it has a name: the spawn rule, around a
+  /// parent (`depth` is the new node's) or, for a new group, beside the group `center` belongs to.
+  public func spawnPoint(around center: Int?, depth: Int) -> LayoutPoint {
+    let origin =
+      center.map { LayoutPoint(x: state.x[$0], y: state.y[$0]) } ?? LayoutPoint(x: 0, y: 0)
+    let distance = state.params.linkDistance * (depth == 0 ? 3 : depth == 1 ? 1.5 : 1)
+    let size = depth == 0 ? 9.0 : 4
+    return leastCrowded(
+      around: origin, distance: distance, box: (size + 30, size + 3, size + 22), skipping: nil)
+  }
+
+  private func leastCrowded(
+    around center: LayoutPoint, distance: Double, box: (hw: Double, up: Double, dn: Double),
+    skipping i: Int?
+  ) -> LayoutPoint {
+    var best = (x: center.x + distance, y: center.y, score: Double.infinity)
     for angle in 0..<48 {
       let theta = Double(angle) * 2 * Double.pi / 48
-      let x = cx + cos(theta) * distance
-      let y = cy + sin(theta) * distance
+      let x = center.x + cos(theta) * distance
+      let y = center.y + sin(theta) * distance
       var score = 0.0
       for j in model.nodes.indices where j != i {
         let ox =
-          min(x + state.hw[i], state.x[j] + state.hw[j])
-          - max(x - state.hw[i], state.x[j] - state.hw[j]) + 6
+          min(x + box.hw, state.x[j] + state.hw[j])
+          - max(x - box.hw, state.x[j] - state.hw[j]) + 6
         let oy =
-          min(y + state.dn[i], state.y[j] + state.dn[j])
-          - max(y - state.up[i], state.y[j] - state.up[j]) + 6
+          min(y + box.dn, state.y[j] + state.dn[j])
+          - max(y - box.up, state.y[j] - state.up[j]) + 6
         score += max(0, ox) * max(0, oy) * 100
         let d2 = pow(x - state.x[j], 2) + pow(y - state.y[j], 2)
         score += 1 / max(1, d2)
       }
       if score < best.score { best = (x, y, score) }
     }
-    state.x[i] = best.x
-    state.y[i] = best.y
+    return LayoutPoint(x: best.x, y: best.y)
   }
 
   private func overlaps(_ i: Int, _ j: Int) -> Bool {
@@ -361,8 +391,8 @@ extension Simulation {
     let forceParams = params
     let edges = springs
     let groups = isGroup
-    // Repulsion ignores pairs beyond 600 units, so 600-unit cells find every pair that counts.
-    let grid = Grid(x: x, y: y, cell: 600)
+    // Repulsion ignores pairs beyond `repelRange`, so cells that size find every pair that counts.
+    let grid = Grid(x: x, y: y, cell: ForceParams.repelRange)
     x.withUnsafeMutableBufferPointer { x in
       y.withUnsafeMutableBufferPointer { y in
         vx.withUnsafeMutableBufferPointer { vx in
@@ -379,7 +409,7 @@ extension Simulation {
                 var dx = px[i] - px[j]
                 var dy = py[i] - py[j]
                 var d2 = dx * dx + dy * dy
-                guard d2 <= 360_000 else { return }
+                guard d2 <= ForceParams.repelRange * ForceParams.repelRange else { return }
                 if d2 < 1 {
                   dx = i < j ? -0.5 : 0.5
                   dy = 0.25

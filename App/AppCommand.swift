@@ -8,6 +8,11 @@ enum AppCommand: CaseIterable {
   case newMap, nextMap, previousMap
   case toggleDone, indent, outdent, moveUp, moveDown
   case zoomIn, zoomOut, fitAll, reshuffle, focusEditor, focusGraph
+  // Graph selection. Plain keys are enabled only while the graph has focus, so the editor keeps
+  // Return, Tab, Delete, Esc and the arrows.
+  case clearSelection, addTask, addSubtask, deleteNode
+  case selectParent, selectFirstChild, selectPreviousSibling, selectNextSibling
+  case priorityHigh, priorityMedium, priorityLow, priorityChill, priorityNone
 
   var title: String {
     switch self {
@@ -25,6 +30,19 @@ enum AppCommand: CaseIterable {
     case .reshuffle: "Reshuffle"
     case .focusEditor: "Focus Editor"
     case .focusGraph: "Focus Graph"
+    case .clearSelection: "Clear Selection"
+    case .addTask: "Add Task"
+    case .addSubtask: "Add Subtask"
+    case .deleteNode: "Delete Node"
+    case .selectParent: "Select Parent"
+    case .selectFirstChild: "Select First Child"
+    case .selectPreviousSibling: "Select Previous Sibling"
+    case .selectNextSibling: "Select Next Sibling"
+    case .priorityHigh: "High"
+    case .priorityMedium: "Medium"
+    case .priorityLow: "Low"
+    case .priorityChill: "Chill"
+    case .priorityNone: "None"
     }
   }
 
@@ -44,6 +62,19 @@ enum AppCommand: CaseIterable {
     case .reshuffle: KeyboardShortcut("r", modifiers: [.command, .shift])
     case .focusEditor: KeyboardShortcut("1", modifiers: .command)
     case .focusGraph: KeyboardShortcut("2", modifiers: .command)
+    case .clearSelection: KeyboardShortcut(.escape, modifiers: [])
+    case .addTask: KeyboardShortcut(.return, modifiers: [])
+    case .addSubtask: KeyboardShortcut(.tab, modifiers: [])
+    case .deleteNode: KeyboardShortcut(.delete, modifiers: [])
+    case .selectParent: KeyboardShortcut(.upArrow, modifiers: [])
+    case .selectFirstChild: KeyboardShortcut(.downArrow, modifiers: [])
+    case .selectPreviousSibling: KeyboardShortcut(.leftArrow, modifiers: [])
+    case .selectNextSibling: KeyboardShortcut(.rightArrow, modifiers: [])
+    case .priorityHigh: KeyboardShortcut("1", modifiers: [.option, .command])
+    case .priorityMedium: KeyboardShortcut("2", modifiers: [.option, .command])
+    case .priorityLow: KeyboardShortcut("3", modifiers: [.option, .command])
+    case .priorityChill: KeyboardShortcut("4", modifiers: [.option, .command])
+    case .priorityNone: KeyboardShortcut("0", modifiers: [.option, .command])
     }
   }
 
@@ -52,6 +83,11 @@ enum AppCommand: CaseIterable {
     case .newMap: store.folder == nil || store.isSwitching
     case .nextMap, .previousMap: store.maps.count < 2 || store.isSwitching
     case .reshuffle: store.currentURL == nil
+    case .clearSelection, .addTask, .addSubtask, .deleteNode, .selectParent, .selectFirstChild,
+      .selectPreviousSibling, .selectNextSibling:
+      !store.graphFocused || store.detail == nil
+    case .priorityHigh, .priorityMedium, .priorityLow, .priorityChill, .priorityNone:
+      store.detail == nil
     default: false
     }
   }
@@ -62,8 +98,7 @@ enum AppCommand: CaseIterable {
     case .nextMap: store.switchMap(by: 1)
     case .previousMap: store.switchMap(by: -1)
     // Editor commands go to whichever outline editor has focus.
-    case .toggleDone:
-      NSApp.sendAction(#selector(OutlineTextView.toggleDone(_:)), to: nil, from: nil)
+    case .toggleDone: store.toggleDoneFromMenu()
     case .indent: NSApp.sendAction(#selector(OutlineTextView.indentLines(_:)), to: nil, from: nil)
     case .outdent: NSApp.sendAction(#selector(OutlineTextView.outdentLines(_:)), to: nil, from: nil)
     case .moveUp: NSApp.sendAction(#selector(OutlineTextView.moveLineUp(_:)), to: nil, from: nil)
@@ -75,6 +110,19 @@ enum AppCommand: CaseIterable {
     case .reshuffle: store.reshuffle()
     case .focusEditor: store.focusEditor()
     case .focusGraph: store.focusGraph()
+    case .clearSelection: store.graphView?.clearSelection()
+    case .addTask: store.graphView?.addTask()
+    case .addSubtask: store.graphView?.addSubtask()
+    case .deleteNode: store.graphView?.deleteSelection()
+    case .selectParent: store.graphView?.navigate(.parent)
+    case .selectFirstChild: store.graphView?.navigate(.firstChild)
+    case .selectPreviousSibling: store.graphView?.navigate(.previousSibling)
+    case .selectNextSibling: store.graphView?.navigate(.nextSibling)
+    case .priorityHigh: store.setPriority(.high)
+    case .priorityMedium: store.setPriority(.medium)
+    case .priorityLow: store.setPriority(.low)
+    case .priorityChill: store.setPriority(.chill)
+    case .priorityNone: store.setPriority(nil)
     }
   }
 

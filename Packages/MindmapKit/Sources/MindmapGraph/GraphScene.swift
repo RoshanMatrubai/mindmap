@@ -14,8 +14,20 @@ public final class GraphScene {
   private let links = CAShapeLayer()
   private let edges = CAShapeLayer()
   private let nodeContainer = CALayer()
+  // Prototype layer order: links, edges, nodes, then the highlighted links, edges and nodes.
+  private let litLinks = CAShapeLayer()
+  private let litEdges = CAShapeLayer()
+  private let litNodes = CALayer()
+  /// The dot of a node being named on the graph, before its line exists.
+  private let ghost = CALayer()
   private let title = CATextLayer()
   public private(set) var layout: GraphLayout?
+  /// The selected node and its highlight (ancestors, subtree, cross-link neighbors).
+  public private(set) var selection: Int?
+  private var lit: [Bool] = []
+  private var linked = Set<Int>()
+  /// Node indices deepest first, so groups draw on top (prototype byDepth).
+  private var order: [Int] = []
   private var nodeLayers: [NodeLayer] = []
   private var reusable: [String: NodeLayer] = [:]
   private var spareLayers: [NodeLayer] = []
@@ -38,17 +50,21 @@ public final class GraphScene {
     root.backgroundColor = GraphStyle.canvas
     root.masksToBounds = true
     world.anchorPoint = .zero
-    for layer in [links, edges] {
+    for layer in [links, edges, litLinks, litEdges] {
       layer.fillColor = nil
       layer.lineCap = .round
       layer.anchorPoint = .zero
     }
     edges.strokeColor = GraphStyle.color(GraphStyle.edge, alpha: GraphStyle.edgeOpacity)
     links.strokeColor = GraphStyle.color(GraphStyle.edge, alpha: GraphStyle.linkOpacity)
+    litEdges.strokeColor = GraphStyle.color(GraphStyle.litEdge)
+    litLinks.strokeColor = GraphStyle.color(GraphStyle.litEdge, alpha: 0.9)
     nodeContainer.anchorPoint = .zero
-    world.addSublayer(links)
-    world.addSublayer(edges)
-    world.addSublayer(nodeContainer)
+    litNodes.anchorPoint = .zero
+    ghost.isHidden = true
+    for layer in [links, edges, nodeContainer, litLinks, litEdges, litNodes, ghost] {
+      world.addSublayer(layer)
+    }
     root.addSublayer(world)
     // Prototype: 15 px, #636366, 10 from the top and 14 from the left. Never a node.
     title.font = GraphStyle.font(size: 15)
@@ -96,7 +112,15 @@ public final class GraphScene {
       ? previous.map {
         NodeIdentity.match(old: $0.model, new: layout.model).newToOld
       } ?? [:] : [:]
+    // The selection follows its node through edits (identity), or its path key otherwise.
+    if let selected = selection, let previous {
+      selection =
+        matches.isEmpty
+        ? layout.model.nodes.firstIndex { $0.pathKey == previous.model.nodes[selected].pathKey }
+        : matches.first { $0.value == selected }?.key
+    }
     self.layout = layout
+    ghost.isHidden = true
     var next: [String: NodeLayer] = [:]
     var used = Set<ObjectIdentifier>()
     // Prefer identity/path matches, then reuse detached layers when maps have different names.
@@ -123,14 +147,80 @@ public final class GraphScene {
         layer.look = NodeLook(node: layout.nodes[i], source: layout.model.nodes[i])
         layer.position = CGPoint(x: layout.nodes[i].x, y: layout.nodes[i].y)
       }
-      // Deepest first, so groups draw on top (prototype byDepth).
-      let order = layout.nodes.indices.sorted {
+      order = layout.nodes.indices.sorted {
         let (a, b) = (layout.model.nodes[$0].depth, layout.model.nodes[$1].depth)
         return a != b ? a > b : $0 < $1
       }
-      nodeContainer.sublayers = order.map { nodeLayers[$0] }
-      rebuildPaths()
+      applySelection()
     }
+  }
+
+  /// Highlights `index`, or clears the highlight. Only layer properties change: colors,
+  /// opacities, which container a node layer is in and which shape layer an edge belongs to.
+  public func select(_ index: Int?) {
+    selection = index.flatMap { layout?.nodes.indices.contains($0) == true ? $0 : nil }
+    without { applySelection() }
+  }
+
+  /// Label boxes of the highlighted nodes (the camera fits these), or nil without a selection.
+  public var selectionBounds: CGRect? {
+    guard let layout, selection != nil else { return nil }
+    return layout.nodes.indices.filter { lit[$0] }.reduce(CGRect.null) {
+      let n = layout.nodes[$1]
+      return $0.union(
+        CGRect(x: n.x - n.halfWidth, y: n.y - n.up, width: n.halfWidth * 2, height: n.up + n.down))
+    }
+  }
+
+  private func applySelection() {
+    guard let layout else { return }
+    let count = layout.nodes.count
+    lit = Array(repeating: false, count: count)
+    linked = []
+    if let selection {
+      let highlight = Selection.highlight(layout.model, of: selection)
+      for i in highlight.nodes { lit[i] = true }
+      linked = Set(highlight.linked)
+    }
+    for (i, layer) in nodeLayers.enumerated() {
+      let source = layout.model.nodes[i]
+      let state: NodeState =
+        selection == nil
+        ? .normal
+        : i == selection ? .selected : lit[i] ? .lit : linked.contains(i) ? .linked : .dimmed
+      layer.style(state, group: source.depth == 0, big: !source.children.isEmpty, done: source.done)
+    }
+    if selection == nil {
+      nodeContainer.sublayers = order.map { nodeLayers[$0] }
+      litNodes.sublayers = nil
+    } else {
+      nodeContainer.sublayers = order.filter { !lit[$0] }.map { nodeLayers[$0] }
+      litNodes.sublayers = order.filter { lit[$0] }.map { nodeLayers[$0] }
+    }
+    let dim = selection != nil
+    edges.strokeColor = GraphStyle.color(
+      GraphStyle.edge, alpha: dim ? GraphStyle.dimEdgeOpacity : GraphStyle.edgeOpacity)
+    links.strokeColor = GraphStyle.color(
+      GraphStyle.edge, alpha: dim ? GraphStyle.dimLinkOpacity : GraphStyle.linkOpacity)
+    rebuildPaths()
+  }
+
+  /// Shows the dot of a node being named at a world point; hidden by the next `show`.
+  public func showGhost(at point: CGPoint, group: Bool) {
+    let r = group ? 9.0 : 4
+    without {
+      ghost.bounds = CGRect(x: 0, y: 0, width: r * 2, height: r * 2)
+      ghost.position = point
+      ghost.cornerRadius = r
+      ghost.backgroundColor = GraphStyle.cached(group ? 0x0d0d0d : 0x55555a)
+      ghost.borderColor = GraphStyle.cached(0x4a4a4e)
+      ghost.borderWidth = group ? 0.6 : 0
+      ghost.isHidden = false
+    }
+  }
+
+  public func hideGhost() {
+    without { ghost.isHidden = true }
   }
 
   /// Publishes one simulation frame. Only positions and paths change, never label contents.
@@ -156,33 +246,39 @@ public final class GraphScene {
     }
   }
 
+  /// Edges inside the highlight go to the highlighted shape layers, drawn above everything.
   private func rebuildPaths() {
     guard let layout else { return }
+    let highlighted = lit.count == layout.nodes.count
     let tree = CGMutablePath()
+    let litTree = CGMutablePath()
     for (i, node) in layout.model.nodes.enumerated() {
       guard let parent = node.parent else { continue }
-      tree.move(to: CGPoint(x: layout.nodes[parent].x, y: layout.nodes[parent].y))
-      tree.addLine(to: CGPoint(x: layout.nodes[i].x, y: layout.nodes[i].y))
+      let path = highlighted && lit[i] ? litTree : tree
+      path.move(to: CGPoint(x: layout.nodes[parent].x, y: layout.nodes[parent].y))
+      path.addLine(to: CGPoint(x: layout.nodes[i].x, y: layout.nodes[i].y))
     }
     edges.path = tree
+    litEdges.path = litTree
     // Dashed quadratic curves bowed sideways by 18% of their length.
     let cross = CGMutablePath()
+    let litCross = CGMutablePath()
     for link in layout.model.resolvedLinks {
       let a = layout.nodes[link.source]
       let b = layout.nodes[link.target]
       let (mx, my, dx, dy) = ((a.x + b.x) / 2, (a.y + b.y) / 2, b.x - a.x, b.y - a.y)
-      cross.move(to: CGPoint(x: a.x, y: a.y))
-      cross.addQuadCurve(
+      let path = highlighted && (lit[link.source] || lit[link.target]) ? litCross : cross
+      path.move(to: CGPoint(x: a.x, y: a.y))
+      path.addQuadCurve(
         to: CGPoint(x: b.x, y: b.y), control: CGPoint(x: mx - dy * 0.18, y: my + dx * 0.18))
     }
     links.path = cross
+    litLinks.path = litCross
   }
 
   /// Sets the camera immediately.
   public func setCamera(_ camera: Camera) {
-    world.removeAllAnimations()
-    edges.removeAllAnimations()
-    links.removeAllAnimations()
+    for layer in [world, edges, links, litEdges, litLinks] { layer.removeAllAnimations() }
     self.camera = camera
     without { applyCamera(camera) }
   }
@@ -226,10 +322,12 @@ public final class GraphScene {
     CATransaction.begin()
     CATransaction.setCompletionBlock { MainActor.assumeIsolated { completion() } }
     world.add(keyframes("sublayerTransform", cameras.map { transform($0) }), forKey: "camera")
-    let widths = cameras.map { 1 / $0.zoom }
-    edges.add(keyframes("lineWidth", widths), forKey: "camera")
-    links.add(keyframes("lineWidth", widths), forKey: "camera")
-    links.add(keyframes("lineDashPattern", cameras.map { dash($0) }), forKey: "dash")
+    for (layer, width) in lineWidths {
+      layer.add(keyframes("lineWidth", cameras.map { width / $0.zoom }), forKey: "camera")
+    }
+    for layer in [links, litLinks] {
+      layer.add(keyframes("lineDashPattern", cameras.map { dash($0) }), forKey: "dash")
+    }
     CATransaction.commit()
   }
 
@@ -242,12 +340,17 @@ public final class GraphScene {
     [3 / c.zoom, 4 / c.zoom].map { NSNumber(value: $0) }
   }
 
+  /// Screen widths: 1 px edges and links, 1.8 px highlighted edges, 1.3 px highlighted links.
+  private var lineWidths: [(CAShapeLayer, Double)] {
+    [(edges, 1), (links, 1), (litEdges, 1.8), (litLinks, 1.3)]
+  }
+
   private func applyCamera(_ c: Camera) {
     world.sublayerTransform = transform(c)
-    // 1 px on screen at every zoom level.
-    edges.lineWidth = 1 / c.zoom
-    links.lineWidth = 1 / c.zoom
+    // Constant on screen at every zoom level.
+    for (layer, width) in lineWidths { layer.lineWidth = width / c.zoom }
     links.lineDashPattern = dash(c)
+    litLinks.lineDashPattern = dash(c)
   }
 
   public func cancelRaster() {
@@ -277,7 +380,7 @@ public final class GraphScene {
         ?? (CTFontCopyPostScriptName(GraphStyle.font(size: look.fontSize)) as String)
       fontNames[look.fontSize] = font
       let key = LabelRasterKey(look: look, font: font, scale: scale)
-      if rasterKeys[i] != key || layer.contents == nil { requests.append((i, key)) }
+      if rasterKeys[i] != key || !layer.hasRaster { requests.append((i, key)) }
     }
     guard !requests.isEmpty else {
       onRasterReady?()
@@ -286,7 +389,7 @@ public final class GraphScene {
     if !rasterizesAsynchronously {
       without {
         for request in requests {
-          if let image = NodeRaster.image(look: request.key.look, scale: request.key.scale) {
+          if let image = NodeRaster.images(look: request.key.look, scale: request.key.scale) {
             nodeLayers[request.index].apply(image, scale: request.key.scale)
             rasterKeys[request.index] = request.key
           }
@@ -301,7 +404,7 @@ public final class GraphScene {
     rasterTask = Task { [weak self] in
       let results = await LabelRasterCache.shared.render(requests.map(\.key))
       guard let self, !Task.isCancelled, generation == self.rasterGeneration else { return }
-      let images = Dictionary(results.map { ($0.key, $0.image) }, uniquingKeysWith: { a, _ in a })
+      let images = Dictionary(results.map { ($0.key, $0.images) }, uniquingKeysWith: { a, _ in a })
       self.without {
         for request in requests {
           guard let image = images[request.key], self.nodeLayers.indices.contains(request.index),
@@ -324,7 +427,8 @@ public final class GraphScene {
     rasterizesAsynchronously = async
   }
 
-  /// Nearest node within `radius` view points of `point`.
+  /// Nearest node within `radius` view points of `point`, else the topmost node whose label
+  /// box holds it (prototype: the dot, its 14 px hit circle and the label are one target).
   public func node(at point: CGPoint, radius: Double) -> Int? {
     guard let layout else { return nil }
     let p = camera.toWorld(point)
@@ -334,8 +438,23 @@ public final class GraphScene {
       let d = hypot(n.x - p.x, n.y - p.y)
       if d <= max(limit, n.radius), d < best?.distance ?? .infinity { best = (i, d) }
     }
-    return best?.index
+    if let best { return best.index }
+    let highlighted = lit.count == layout.nodes.count
+    let top =
+      order.reversed().filter { highlighted && lit[$0] }
+      + order.reversed().filter { !(highlighted && lit[$0]) }
+    return top.first { i in
+      let n = layout.nodes[i]
+      return abs(p.x - n.x) <= n.halfWidth && p.y >= n.y - n.up && p.y <= n.y + n.down
+    }
   }
+
+  #if DEBUG
+    public func debugIsLit(_ i: Int) -> Bool { lit.indices.contains(i) && lit[i] }
+    public func debugOpacity(_ i: Int) -> Float { nodeLayers[i].opacity }
+    public var debugGhostVisible: Bool { !ghost.isHidden }
+    public var debugLitEdgesEmpty: Bool { litEdges.path?.isEmpty ?? true }
+  #endif
 
   private func without(_ body: () -> Void) {
     CATransaction.begin()

@@ -163,6 +163,8 @@
         }
         await layoutChecks(store)
         created = store.currentURL
+        // After the sidecar checks: deleting and undoing a node re-adds it unpinned, like typing.
+        await selectionChecks(store, editor: editor, view: view, window: window)
         await displayLinkChecks(store, view: view, window: window)
         await timingChecks(store)
         await activationChecks(store, editor: editor)
@@ -317,6 +319,8 @@
       menu(.fitAll)
       menu(.focusGraph)
       check(window.firstResponder === view, "Focus Graph reaches graph view")
+      sendKey("\u{1b}", code: 53, window: window)
+      check(view.selection == nil && store.detail == nil, "Esc clears the selection")
       for (characters, code) in [
         ("\u{f700}", UInt16(126)), ("\u{f701}", 125), ("\u{f702}", 123), ("\u{f703}", 124),
       ] {
@@ -523,16 +527,25 @@
         "deleting task moves no surviving nodes")
     }
 
-    private static func mouse(
-      _ type: NSEvent.EventType, point: CGPoint, view: GraphView, window: NSWindow
-    ) {
+    private static func mouseEvent(
+      _ type: NSEvent.EventType, point: CGPoint, view: GraphView, window: NSWindow,
+      clicks: Int = 1, modifiers: NSEvent.ModifierFlags = []
+    ) -> NSEvent? {
       let local = view.convert(CGPoint(x: point.x, y: view.bounds.height - point.y), to: nil)
+      return NSEvent.mouseEvent(
+        with: type, location: local, modifierFlags: modifiers,
+        timestamp: ProcessInfo.processInfo.systemUptime,
+        windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: clicks,
+        pressure: 1)
+    }
+
+    private static func mouse(
+      _ type: NSEvent.EventType, point: CGPoint, view: GraphView, window: NSWindow,
+      clicks: Int = 1, modifiers: NSEvent.ModifierFlags = []
+    ) {
       guard
-        let event = NSEvent.mouseEvent(
-          with: type, location: local, modifierFlags: [],
-          timestamp: ProcessInfo.processInfo.systemUptime,
-          windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
-          pressure: 1)
+        let event = mouseEvent(
+          type, point: point, view: view, window: window, clicks: clicks, modifiers: modifiers)
       else {
         check(false, "mouse event created")
         return
@@ -567,23 +580,50 @@
       }
       let node = before.nodes[index]
       let start = view.scene.camera.toScreen(CGPoint(x: node.x, y: node.y))
-      let end = CGPoint(x: start.x + 70, y: start.y + 30)
+      // Plain drag, away from the child: only the node moves.
+      let childAt = camera.toScreen(CGPoint(x: before.nodes[child].x, y: before.nodes[child].y))
+      let away = hypot(start.x - childAt.x, start.y - childAt.y)
+      let plainEnd = CGPoint(
+        x: start.x + (start.x - childAt.x) / max(away, 1) * 40,
+        y: start.y + (start.y - childAt.y) / max(away, 1) * 40)
       mouse(.leftMouseDown, point: start, view: view, window: window)
-      mouse(.leftMouseDragged, point: end, view: view, window: window)
+      mouse(.leftMouseDragged, point: plainEnd, view: view, window: window)
       try? await Task.sleep(for: .milliseconds(400))
       if let during = view.scene.layout {
         check(
-          during.nodes[child].x != before.nodes[child].x
-            || during.nodes[child].y != before.nodes[child].y,
-          "drag subtree follows on springs")
+          during.nodes[child].x == before.nodes[child].x
+            && during.nodes[child].y == before.nodes[child].y,
+          "plain drag moves only the node, child stays")
+      }
+      mouse(.leftMouseUp, point: plainEnd, view: view, window: window)
+      guard await frozen(store), let plain = view.scene.layout else { return }
+      check(
+        plain.nodes[child].x == before.nodes[child].x
+          && plain.nodes[child].y == before.nodes[child].y
+          && hypot(
+            plain.nodes[index].x - before.nodes[index].x,
+            plain.nodes[index].y - before.nodes[index].y) > 1,
+        "after a plain drag the node moved and its child didn't")
+      // ⇧-drag: the subtree follows on springs.
+      let shiftStart = view.scene.camera.toScreen(
+        CGPoint(x: plain.nodes[index].x, y: plain.nodes[index].y))
+      let end = CGPoint(x: shiftStart.x + 70, y: shiftStart.y + 30)
+      mouse(.leftMouseDown, point: shiftStart, view: view, window: window, modifiers: .shift)
+      mouse(.leftMouseDragged, point: end, view: view, window: window, modifiers: .shift)
+      try? await Task.sleep(for: .milliseconds(400))
+      if let during = view.scene.layout {
+        check(
+          during.nodes[child].x != plain.nodes[child].x
+            || during.nodes[child].y != plain.nodes[child].y,
+          "⇧-drag subtree follows on springs")
         let cursor = view.scene.camera.toWorld(end)
         check(
           hypot(during.nodes[index].x - cursor.x, during.nodes[index].y - cursor.y) < 0.1,
           "dragged node follows cursor")
       }
-      mouse(.leftMouseUp, point: end, view: view, window: window)
+      mouse(.leftMouseUp, point: end, view: view, window: window, modifiers: .shift)
       guard await frozen(store) else { return }
-      fixedCheck(before, view: view, name: "drag local relaxation")
+      fixedCheck(plain, view: view, name: "drag local relaxation")
       guard let url = store.currentURL, let after = view.scene.layout else { return }
       let key = after.model.nodes[index].pathKey
       let point = LayoutPoint(x: after.nodes[index].x, y: after.nodes[index].y)
@@ -750,7 +790,10 @@
             until: {
               LayoutSidecar.load(for: target)?.positions.count == count
             })
-          if count == 500 { await crowdedDrag(store, view: view) }
+          if count == 500 {
+            selectionTiming(store, view: view)
+            await crowdedDrag(store, view: view)
+          }
           for trial in 1...3 {
             store.switchMap(saved)
             guard
@@ -796,16 +839,16 @@
         CGPoint(x: layout.nodes[index].x, y: layout.nodes[index].y))
       let end = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
       view.debugResetFrameMetrics()
-      mouse(.leftMouseDown, point: start, view: view, window: window)
+      mouse(.leftMouseDown, point: start, view: view, window: window, modifiers: .shift)
       for step in 1...60 {
         let t = Double(step) / 60
         mouse(
           .leftMouseDragged,
           point: CGPoint(x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t),
-          view: view, window: window)
+          view: view, window: window, modifiers: .shift)
         try? await Task.sleep(for: .milliseconds(16))
       }
-      mouse(.leftMouseUp, point: end, view: view, window: window)
+      mouse(.leftMouseUp, point: end, view: view, window: window, modifiers: .shift)
       guard await frozen(store) else { return }
       let metrics = view.debugFrameMetrics
       let moved = view.affectedIndices.count
@@ -813,6 +856,363 @@
         "motion metrics crowded-drag nodes=500 affected=\(moved, privacy: .public) main-frame-average-ms=\(metrics.averageMilliseconds, privacy: .public) main-frame-worst-ms=\(metrics.worstMilliseconds, privacy: .public) frames=\(metrics.frames, privacy: .public)"
       )
       check(metrics.frames > 30 && moved < 500, "crowded drag animates and stays local")
+    }
+
+    // MARK: Selection (roadmap 3b)
+
+    /// The graph shows the parse of the current text, settled.
+    @discardableResult
+    private static func current(_ store: MapStore, _ name: String) async -> Bool {
+      await wait(name) {
+        store.parsedText == store.text && store.graphView?.scene.layout?.model == store.model
+          && store.graphView?.isAnimating == false
+      }
+    }
+
+    private static func nodeIndex(_ view: GraphView, _ name: String) -> Int? {
+      view.scene.layout?.model.nodes.firstIndex { $0.name == name }
+    }
+
+    /// A view point that hits `index` (or empty canvas for nil), clear of the zoom buttons.
+    private static func target(_ view: GraphView, _ index: Int?) -> CGPoint? {
+      guard let layout = view.scene.layout else { return nil }
+      let ok = { (p: CGPoint) in
+        p.x > 20 && p.y > 60 && p.x < view.bounds.width - 120 && p.y < view.bounds.height - 20
+      }
+      guard let index else {
+        for y in stride(from: 80.0, to: view.bounds.height - 20, by: 23) {
+          for x in stride(from: 30.0, to: view.bounds.width - 130, by: 29) {
+            let p = CGPoint(x: x, y: y)
+            let w = view.scene.camera.toWorld(p)
+            let clear = layout.nodes.allSatisfy { hypot($0.x - w.x, $0.y - w.y) > 120 }
+            if clear && view.scene.node(at: p, radius: 14) == nil { return p }
+          }
+        }
+        return nil
+      }
+      let n = layout.nodes[index]
+      let p = view.scene.camera.toScreen(CGPoint(x: n.x, y: n.y))
+      return ok(p) && view.scene.node(at: p, radius: 14) == index ? p : nil
+    }
+
+    private static func click(
+      _ view: GraphView, at p: CGPoint, window: NSWindow, clicks: Int = 1
+    ) {
+      for count in 1...clicks {
+        mouse(.leftMouseDown, point: p, view: view, window: window, clicks: count)
+        mouse(.leftMouseUp, point: p, view: view, window: window, clicks: count)
+      }
+    }
+
+    private static func type(_ text: String, window: NSWindow) {
+      for character in text { sendKey(String(character), code: 0, window: window) }
+    }
+
+    private static func line(_ editor: OutlineTextView, containing name: String) -> String {
+      let ns = editor.string as NSString
+      let range = ns.range(of: name)
+      guard range.location != NSNotFound else { return "" }
+      return ns.substring(with: ns.lineRange(for: range))
+        .trimmingCharacters(in: .newlines)
+    }
+
+    private static func selectionChecks(
+      _ store: MapStore, editor: OutlineTextView, view: GraphView, window: NSWindow
+    ) async {
+      let title = MapDocument.title(of: store.text) ?? "Smoke"
+      replace(
+        editor,
+        with: title
+          + "\nGroup\n- Parent\n\t- Child\n\t- Kid\n- Second /high\nOther\n- Distant [[Second]]\n")
+      guard await frozen(store) else { return }
+      view.fitAll()
+      try? await Task.sleep(for: .milliseconds(450))
+
+      // Click selects, highlights, fits the camera and selects the editor line.
+      guard let parent = nodeIndex(view, "Parent"), let p = target(view, parent),
+        let distant = nodeIndex(view, "Distant"), let group = nodeIndex(view, "Group")
+      else { return check(false, "selection targets on screen") }
+      let fitted = view.scene.camera
+      click(view, at: p, window: window)
+      check(view.selection == parent && store.detail?.name == "Parent", "click selects a node")
+      check(window.firstResponder === view && store.graphFocused, "click focuses the graph")
+      check(
+        view.scene.debugIsLit(group) && view.scene.debugIsLit(nodeIndex(view, "Kid") ?? -1)
+          && !view.scene.debugIsLit(distant) && view.scene.debugOpacity(distant) < 0.35
+          && !view.scene.debugLitEdgesEmpty,
+        "highlight lights ancestors and subtree, dims the rest")
+      let parentRange = store.model.nodes[parent].sourceRange
+      check(editor.selectedRange() == parentRange, "click selects the editor line")
+      let expected = Camera.fit(
+        view.scene.selectionBounds ?? .null, in: view.bounds.size, padding: 50)
+      check(
+        view.scene.camera != fitted && view.scene.camera == expected,
+        "click animates the camera to the branch, once (no editor feedback)")
+      try? await Task.sleep(for: .milliseconds(450))
+
+      // The editor cursor highlights without a camera move.
+      let still = view.scene.camera
+      editor.setSelectedRange(
+        NSRange(location: store.model.nodes[distant].sourceRange.location + 3, length: 0))
+      check(view.selection == distant && store.detail?.name == "Distant", "editor cursor selects")
+      check(
+        view.scene.camera == still && view.scene.visibleCamera == still,
+        "editor cursor doesn't move the camera")
+      check(
+        view.scene.debugIsLit(nodeIndex(view, "Other") ?? -1)
+          && view.scene.debugOpacity(parent) < 1,
+        "editor cursor highlights the branch")
+
+      // Esc clears.
+      store.focusGraph()
+      sendKey("\u{1b}", code: 53, window: window)
+      check(view.selection == nil && store.detail == nil, "Esc clears the selection")
+      check(view.scene.debugOpacity(distant) == 1, "clearing restores full opacity")
+
+      // Real key routing: with the editor focused, Return is a text Return even with a selection.
+      store.focusEditor()
+      editor.setSelectedRange(
+        NSRange(location: NSMaxRange(store.model.nodes[distant].sourceRange), length: 0))
+      let typed = editor.string
+      if let event = key("\r", code: 36, window: window) { NSApp.sendEvent(event) }
+      check(
+        editor.string != typed && !view.isNaming,
+        "editor keeps Return while it has focus (app routing)")
+      editor.undoManager?.undo()
+      check(editor.string == typed, "editor Return undone")
+      guard await current(store, "graph current after editor Return") else { return }
+
+      // Return adds a sibling after the branch, typed inline.
+      view.select(parent, camera: false)
+      store.graphSelected(parent)
+      store.focusGraph()
+      sendKey("\r", code: 36, window: window)
+      check(view.isNaming && view.debugNamingText == "", "Return starts naming a new task")
+      check(view.scene.debugGhostVisible, "new node's dot shows while naming")
+      type("Fresh", window: window)
+      sendKey("\r", code: 36, window: window)
+      check(
+        editor.string.contains("\t- Kid\n- Fresh\n- Second"), "Return adds a task after the branch")
+      guard await current(store, "Return parse shown"),
+        let fresh = nodeIndex(view, "Fresh")
+      else { return }
+      check(view.selection == fresh && !view.scene.debugGhostVisible, "new task is selected")
+      check(window.firstResponder === view, "graph keeps focus after naming")
+
+      // Tab adds the last child.
+      guard let second = nodeIndex(view, "Second") else { return }
+      view.select(second, camera: false)
+      store.graphSelected(second)
+      sendKey("\t", code: 48, window: window)
+      type("Sub", window: window)
+      sendKey("\r", code: 36, window: window)
+      check(editor.string.contains("- Second /high\n\t- Sub\n"), "Tab adds a subtask")
+      guard await current(store, "Tab parse shown") else { return }
+      check(view.selection == nodeIndex(view, "Sub"), "new subtask is selected")
+
+      // Esc while naming an empty new node removes it.
+      let beforeEmpty = editor.string
+      sendKey("\r", code: 36, window: window)
+      check(view.isNaming, "Return starts another new node")
+      sendKey("\u{1b}", code: 53, window: window)
+      check(
+        !view.isNaming && editor.string == beforeEmpty && !view.scene.debugGhostVisible,
+        "Esc on an empty new node removes it")
+
+      // Double-click a label renames it, keeping its metadata.
+      view.select(nil, camera: false)
+      guard let d = nodeIndex(view, "Distant"), let dp = target(view, d) else {
+        return check(false, "rename target on screen")
+      }
+      click(view, at: dp, window: window, clicks: 2)
+      check(view.debugNamingText == "Distant", "double-click starts a rename with the name")
+      try? await Task.sleep(for: .milliseconds(450))
+      type("Faraway", window: window)
+      sendKey("\r", code: 36, window: window)
+      check(line(editor, containing: "Faraway") == "- Faraway [[Second]]", "rename keeps the link")
+      guard await current(store, "rename parse shown") else { return }
+
+      // Double-click empty canvas adds a group at that spot.
+      view.select(nil, camera: true)
+      view.fitAll()
+      try? await Task.sleep(for: .milliseconds(450))
+      guard let empty = target(view, nil) else { return check(false, "empty canvas on screen") }
+      let spot = view.scene.camera.toWorld(empty)
+      click(view, at: empty, window: window, clicks: 2)
+      check(view.isNaming && view.scene.debugGhostVisible, "double-click canvas starts a group")
+      type("Fresh group", window: window)
+      sendKey("\r", code: 36, window: window)
+      check(editor.string.hasSuffix("- Faraway [[Second]]\nFresh group\n"), "group appended")
+      guard await frozen(store), let made = nodeIndex(view, "Fresh group"),
+        let layout = view.scene.layout
+      else { return }
+      check(
+        hypot(layout.nodes[made].x - spot.x, layout.nodes[made].y - spot.y) < 0.5,
+        "new group sits where the canvas was double-clicked")
+
+      // Delete removes the branch, selects the parent, and ⌘Z restores the exact text.
+      guard let parentNow = nodeIndex(view, "Parent") else { return }
+      view.select(parentNow, camera: false)
+      store.graphSelected(parentNow)
+      store.focusGraph()
+      let beforeDelete = editor.string
+      sendKey("\u{7f}", code: 51, window: window)
+      check(
+        !editor.string.contains("Parent") && !editor.string.contains("Child")
+          && !editor.string.contains("Kid"), "Delete removes the node and its subtasks")
+      guard await current(store, "delete parse shown") else { return }
+      check(view.selection == nodeIndex(view, "Group"), "Delete selects the parent")
+      systemMenu("undo:", name: "Undo after Delete")
+      check(editor.string == beforeDelete, "⌘Z restores the exact text")
+      check(store.text == editor.string, "undo reaches the store (saved and re-parsed)")
+      guard await current(store, "undo parse shown") else { return }
+
+      // ⌥⌘1–4 and ⌥⌘0 write, replace and clear the priority tag.
+      guard let far = nodeIndex(view, "Faraway") else { return }
+      view.select(far, camera: false)
+      store.graphSelected(far)
+      for (command, expected) in [
+        (AppCommand.priorityHigh, "- Faraway [[Second]] /high"),
+        (.priorityMedium, "- Faraway [[Second]] /medium"),
+        (.priorityLow, "- Faraway [[Second]] /low"),
+        (.priorityChill, "- Faraway [[Second]] /chill"), (.priorityNone, "- Faraway [[Second]]"),
+      ] {
+        menu(command, name: "priority \(command.title)")
+        let found = line(editor, containing: "Faraway")
+        check(found == expected, "\(command.title) writes \(expected) (found \(found))")
+        guard await current(store, "priority parse shown") else { return }
+      }
+
+      // The detail panel's done checkbox toggles [x].
+      guard let fresh2 = nodeIndex(view, "Fresh") else { return }
+      view.select(fresh2, camera: false)
+      store.graphSelected(fresh2)
+      check(
+        store.detail?.kind == .task(due: nil, priority: nil, done: false, leaf: true),
+        "detail shows an open leaf task")
+      store.toggleDone(fresh2)
+      check(editor.string.contains("- [x] Fresh\n"), "done checkbox writes [x]")
+      guard await current(store, "done parse shown") else { return }
+      check(
+        store.detail?.kind == .task(due: nil, priority: nil, done: true, leaf: true),
+        "detail shows done")
+      store.toggleDone(fresh2)
+      check(editor.string.contains("\n- Fresh\n"), "done checkbox clears [x]")
+      guard await current(store, "undone parse shown") else { return }
+
+      // A linked name selects that node, with a camera move and the editor line.
+      guard let secondNow = nodeIndex(view, "Second") else { return }
+      view.select(secondNow, camera: false)
+      store.graphSelected(secondNow)
+      guard let linked = store.detail?.linked.first else {
+        return check(false, "detail lists linked names")
+      }
+      check(linked.name == "Faraway", "linked to lists the cross-linked node")
+      let beforeLink = view.scene.camera
+      store.selectLinked(linked.index)
+      check(
+        view.selection == linked.index && view.scene.camera != beforeLink
+          && editor.selectedRange() == store.model.nodes[linked.index].sourceRange,
+        "linked name selects with camera move")
+      try? await Task.sleep(for: .milliseconds(450))
+
+      // Arrow keys move the selection: ↑ parent, ↓ first child, ← → siblings.
+      guard let child = nodeIndex(view, "Child"), let kid = nodeIndex(view, "Kid"),
+        let parentAgain = nodeIndex(view, "Parent")
+      else { return }
+      view.select(child, camera: false)
+      store.graphSelected(child)
+      store.focusGraph()
+      for (code, characters, expected, name) in [
+        (UInt16(126), "\u{f700}", parentAgain, "↑ parent"),
+        (125, "\u{f701}", child, "↓ first child"),
+        (124, "\u{f703}", kid, "→ next sibling"),
+        (123, "\u{f702}", child, "← previous sibling"),
+      ] {
+        let camera = view.scene.camera
+        sendKey(characters, code: code, window: window)
+        check(
+          view.selection == expected && view.scene.camera != camera
+            && editor.selectedRange() == store.model.nodes[expected].sourceRange,
+          "arrow \(name)")
+      }
+      try? await Task.sleep(for: .milliseconds(450))
+
+      // Right-click menus.
+      if let cp = target(view, child),
+        let event = mouseEvent(.rightMouseDown, point: cp, view: view, window: window),
+        let menu = view.menu(for: event)
+      {
+        let titles = menu.items.map(\.title)
+        let priorities = menu.items.first { $0.title == "Priority" }?.submenu?.items.map(\.title)
+        check(
+          ["Add Task", "Add Subtask", "Rename", "Mark Done", "Priority", "Delete"].allSatisfy(
+            titles.contains) && priorities == ["High", "Medium", "Low", "Chill", "None"],
+          "node right-click menu items: \(titles)")
+      } else {
+        check(false, "node right-click menu")
+      }
+      if let ep = target(view, nil),
+        let event = mouseEvent(.rightMouseDown, point: ep, view: view, window: window)
+      {
+        check(view.menu(for: event)?.items.map(\.title) == ["New Group"], "canvas right-click menu")
+      }
+
+      // Menu items exist with their shortcuts (graph focused, with a selection).
+      view.select(child, camera: false)
+      store.graphSelected(child)
+      store.focusGraph()
+      for command in [
+        AppCommand.selectParent, .selectFirstChild, .selectNextSibling, .selectPreviousSibling,
+        .clearSelection,
+      ] {
+        menu(command)
+      }
+      view.select(child, camera: false)
+      store.graphSelected(child)
+      store.focusEditor()
+      check(
+        AppCommand.addTask.isDisabled(store) && AppCommand.deleteNode.isDisabled(store),
+        "graph key commands are disabled while the editor has focus")
+
+      // A map switch clears the selection.
+      view.select(child, camera: false)
+      store.graphSelected(child)
+      let map = store.currentURL
+      store.switchMap(by: 1)
+      guard
+        await wait("switch for selection", until: { !store.isSwitching && store.currentURL != map })
+      else { return }
+      check(view.selection == nil && store.detail == nil, "map switch clears the selection")
+      store.switchMap(map!)
+      _ = await wait(
+        "switch back after selection", until: { !store.isSwitching && store.currentURL == map })
+      _ = await frozen(store)
+    }
+
+    /// Main-thread time to apply a selection on the 500-node fixture.
+    private static func selectionTiming(_ store: MapStore, view: GraphView) {
+      guard let model = view.scene.layout?.model,
+        let group = model.nodes.firstIndex(where: { $0.depth == 0 && $0.children.count > 3 }),
+        let leaf = model.nodes.firstIndex(where: { $0.depth > 0 && $0.children.isEmpty })
+      else { return }
+      for (name, index) in [("group", Optional(group)), ("leaf", leaf), ("clear", nil)] {
+        var samples: [Double] = []
+        for _ in 0..<5 {
+          view.select(index == nil ? group : nil, camera: false)
+          let start = ContinuousClock.now
+          view.select(index, camera: true)
+          store.graphSelected(index)
+          let d = start.duration(to: .now).components
+          samples.append(Double(d.seconds) * 1000 + Double(d.attoseconds) / 1e15)
+        }
+        log.notice(
+          "selection apply nodes=500 kind=\(name, privacy: .public) median-ms=\(samples.sorted()[2], privacy: .public) worst-ms=\(samples.max() ?? 0, privacy: .public)"
+        )
+        check(samples.sorted()[2] < 8, "500-node \(name) selection applies in under 8 ms")
+      }
+      view.select(nil, camera: false)
+      store.graphSelected(nil)
     }
 
     private static func fileChecks() async {

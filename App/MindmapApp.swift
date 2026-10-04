@@ -44,6 +44,18 @@ struct MindmapApp: App {
         Divider()
         AppCommand.moveUp.button(store)
         AppCommand.moveDown.button(store)
+        Divider()
+        AppCommand.addTask.button(store)
+        AppCommand.addSubtask.button(store)
+        AppCommand.deleteNode.button(store)
+        Menu("Priority") {
+          AppCommand.priorityHigh.button(store)
+          AppCommand.priorityMedium.button(store)
+          AppCommand.priorityLow.button(store)
+          AppCommand.priorityChill.button(store)
+          Divider()
+          AppCommand.priorityNone.button(store)
+        }
       }
       CommandGroup(after: .toolbar) {
         AppCommand.zoomIn.button(store)
@@ -53,6 +65,12 @@ struct MindmapApp: App {
         Divider()
         AppCommand.focusEditor.button(store)
         AppCommand.focusGraph.button(store)
+        Divider()
+        AppCommand.clearSelection.button(store)
+        AppCommand.selectParent.button(store)
+        AppCommand.selectFirstChild.button(store)
+        AppCommand.selectPreviousSibling.button(store)
+        AppCommand.selectNextSibling.button(store)
         Divider()
       }
     }

@@ -9,8 +9,11 @@ struct ContentView: View {
     HSplitView {
       OutlineEditor(store: store)
         .frame(minWidth: 300, idealWidth: 400)
-      GraphPane(store: store)
-        .frame(minWidth: 400)
+      VStack(spacing: 0) {
+        GraphPane(store: store)
+        DetailPanel(store: store)
+      }
+      .frame(minWidth: 400)
     }
     .frame(minWidth: 900, minHeight: 600)
     .preferredColorScheme(.dark)

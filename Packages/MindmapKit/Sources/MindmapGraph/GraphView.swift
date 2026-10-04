@@ -3,16 +3,60 @@ import MindmapCore
 import QuartzCore
 import os
 
+/// Where a node added from the graph goes in the text.
+public enum GraphAdd: Equatable, Sendable {
+  case sibling(Int)
+  case child(Int)
+  case group
+}
+
+/// An edit made on the graph. The owner applies it to the text, the single source of truth.
+public enum GraphEdit: Equatable, Sendable {
+  case add(GraphAdd, name: String, at: LayoutPoint)
+  case rename(Int, String)
+  case toggleDone(Int)
+  case priority(Int, MapPriority?)
+  case delete(Int)
+}
+
 /// The graph pane. Trackpad: two-finger scroll pans, pinch zooms about the cursor. Mouse: the
-/// wheel zooms about the cursor, dragging empty canvas pans. Dragging a node moves and pins it.
-/// The display link exists only during simulation or an active drag.
-public final class GraphView: NSView {
+/// wheel zooms about the cursor, dragging empty canvas pans. Dragging a node moves and pins it
+/// (⇧-drag brings its subtree). Clicking selects; double-clicking names. The display link
+/// exists only during simulation or an active drag.
+public final class GraphView: NSView, NSTextFieldDelegate {
   public let scene = GraphScene()
   /// A node was dropped: the shown document, its path key and new world position.
   public var onPin: ((UUID, String, LayoutPoint) -> Void)?
+  /// The user selected a node on the graph (click, arrows, Esc, right-click). Not called for
+  /// `select(_:camera:)`, so the owner can sync the editor without a loop.
+  public var onSelect: ((Int?) -> Void)?
+  /// Returns false when the edit couldn't be applied.
+  public var onEdit: ((GraphEdit) -> Bool)?
+  public var onFocus: ((Bool) -> Void)?
+  public var selection: Int? { scene.selection }
+  public var isNaming: Bool { naming != nil }
   /// Until the user pans or zooms, the camera fits everything (first show, rebuilds, resizes).
   private var following = true
-  private var press: (point: CGPoint, camera: Camera, node: Int?, grab: CGPoint)?
+  private var press: (point: CGPoint, camera: Camera, node: Int?, grab: CGPoint, shift: Bool)?
+  private enum NamingKind { case rename, sibling, child, group }
+  /// Targets are path keys, resolved on commit, so a rebuild meanwhile can't shift them.
+  private var naming: (kind: NamingKind, key: String?, point: LayoutPoint)?
+  private lazy var field: NSTextField = {
+    let field = NSTextField(string: "")
+    field.isBordered = false
+    field.focusRingType = .none
+    field.drawsBackground = true
+    field.backgroundColor = NSColor(cgColor: GraphStyle.canvas)
+    field.textColor = NSColor(cgColor: GraphStyle.cached(GraphStyle.brightLabel))
+    field.alignment = .center
+    field.cell?.isScrollable = true
+    field.wantsLayer = true
+    field.layer?.borderColor = GraphStyle.cached(0x4f2fc4)
+    field.layer?.borderWidth = 1
+    field.layer?.cornerRadius = 4
+    field.delegate = self
+    return field
+  }()
   private var moved = false
   private var rasterTask: Task<Void, Never>?
   public var onFreeze: ((UUID, GraphLayout, [String: LayoutPoint]) -> Void)?
@@ -58,6 +102,8 @@ public final class GraphView: NSView {
       frameWorst = 0
       frameCount = 0
     }
+    /// The inline name field's text while naming, else nil.
+    public var debugNamingText: String? { naming == nil ? nil : field.stringValue }
     public func debugMagnify(by magnification: Double, about point: CGPoint) {
       move(scene.visibleCamera.zoomed(by: 1 + magnification, about: point, limits: limits))
     }
@@ -122,6 +168,10 @@ public final class GraphView: NSView {
     document: UUID
   ) {
     stopMotion()
+    if self.document != document {
+      finishNaming(commit: false)
+      scene.select(nil)
+    }
     self.document = document
     worker = SimulationWorker(simulation, document: document)
     displayedSimulation = simulation
@@ -369,6 +419,7 @@ public final class GraphView: NSView {
   /// Trackpad (and Magic Mouse) scrolls carry a gesture or momentum phase and pan. Wheels have
   /// neither, even smooth-scrolling ones with precise deltas, and zoom about the cursor.
   public override func scrollWheel(with event: NSEvent) {
+    finishNaming(commit: true)
     let camera = scene.visibleCamera
     if !event.phase.isEmpty || !event.momentumPhase.isEmpty {
       move(camera.panned(by: CGPoint(x: event.scrollingDeltaX, y: event.scrollingDeltaY)))
@@ -387,6 +438,7 @@ public final class GraphView: NSView {
   }
 
   public override func magnify(with event: NSEvent) {
+    finishNaming(commit: true)
     move(
       scene.visibleCamera.zoomed(by: 1 + event.magnification, about: point(event), limits: limits))
   }
@@ -403,7 +455,7 @@ public final class GraphView: NSView {
       let w = camera.toWorld(p)
       grab = CGPoint(x: n.x - w.x, y: n.y - w.y)
     }
-    press = (p, camera, node, grab)
+    press = (p, camera, node, grab, event.modifierFlags.contains(.shift))
     moved = false
   }
 
@@ -417,7 +469,7 @@ public final class GraphView: NSView {
       following = false
       let w = press.camera.toWorld(p)
       let point = LayoutPoint(x: w.x + press.grab.x, y: w.y + press.grab.y)
-      dragUpdate = GraphDrag(index: node, point: point, active: true)
+      dragUpdate = GraphDrag(index: node, point: point, active: true, subtree: press.shift)
       freezeReported = false
       scene.moveNode(node, to: CGPoint(x: point.x, y: point.y))
       resumeMotion()
@@ -432,10 +484,25 @@ public final class GraphView: NSView {
       press = nil
       window?.invalidateCursorRects(for: self)
     }
-    guard moved, let node = press?.node, let layout = scene.layout else { return }
+    guard let press else { return }
+    if !moved {
+      if event.clickCount >= 2 {
+        if let node = press.node {
+          beginRename(node)
+        } else {
+          let w = press.camera.toWorld(press.point)
+          beginAdd(.group, at: LayoutPoint(x: w.x, y: w.y))
+        }
+      } else {
+        userSelect(press.node)
+      }
+      return
+    }
+    guard let node = press.node, let layout = scene.layout else { return }
     let n = layout.nodes[node]
     if worker != nil {
-      dragUpdate = GraphDrag(index: node, point: LayoutPoint(x: n.x, y: n.y), active: false)
+      dragUpdate = GraphDrag(
+        index: node, point: LayoutPoint(x: n.x, y: n.y), active: false, subtree: press.shift)
       resumeMotion()
     }
     if let document {
@@ -443,7 +510,25 @@ public final class GraphView: NSView {
     }
   }
 
+  /// With a selection: Esc clears, Return adds a task, Tab a subtask, Delete removes, arrows
+  /// move the selection. The same actions are menu items (AppCommand); this covers keys that
+  /// reach the view directly.
   public override func keyDown(with event: NSEvent) {
+    if event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty,
+      selection != nil
+    {
+      switch event.keyCode {
+      case 53: return clearSelection()
+      case 36, 76: return addTask()
+      case 48: return addSubtask()
+      case 51, 117: return deleteSelection()
+      case 126: return navigate(.parent)
+      case 125: return navigate(.firstChild)
+      case 123: return navigate(.previousSibling)
+      case 124: return navigate(.nextSibling)
+      default: break
+      }
+    }
     let step = 60.0
     let delta: CGPoint
     switch event.specialKey {
@@ -457,4 +542,211 @@ public final class GraphView: NSView {
     }
     move(scene.visibleCamera.panned(by: delta))
   }
+
+  // MARK: Selection
+
+  public override func becomeFirstResponder() -> Bool {
+    onFocus?(true)
+    return true
+  }
+
+  public override func resignFirstResponder() -> Bool {
+    onFocus?(false)
+    return true
+  }
+
+  /// Highlights `index` (nil clears). With `camera`, animates to fit the highlight, or back to
+  /// fit all when a selection was cleared.
+  public func select(_ index: Int?, camera: Bool) {
+    let had = scene.selection != nil
+    scene.select(index)
+    guard camera else { return }
+    if let box = scene.selectionBounds {
+      following = false
+      scene.animateCamera(to: Camera.fit(box, in: bounds.size, padding: 50)) { [weak self] in
+        self?.scheduleRaster()
+      }
+    } else if had {
+      fitAll()
+    }
+  }
+
+  private func userSelect(_ index: Int?, camera: Bool = true) {
+    select(index, camera: camera)
+    onSelect?(scene.selection)
+  }
+
+  public func clearSelection() { userSelect(nil) }
+
+  public func navigate(_ move: SelectionMove) {
+    guard let selection, let model = scene.layout?.model else { return }
+    if let next = Selection.neighbor(model, of: selection, move) { userSelect(next) }
+  }
+
+  public func addTask() { selection.map { beginAdd(.sibling($0)) } }
+  public func addSubtask() { selection.map { beginAdd(.child($0)) } }
+  public func deleteSelection() { selection.map { _ = onEdit?(.delete($0)) } }
+
+  // MARK: Naming on the graph
+
+  /// Shows the new node's dot and an empty name field: by its parent (the spawn rule), or at
+  /// `point` for a group. Nothing reaches the text until the name is committed.
+  public func beginAdd(_ add: GraphAdd, at point: LayoutPoint? = nil) {
+    finishNaming(commit: true)
+    guard let layout = scene.layout, let simulation = displayedSimulation,
+      simulation.layout.model == layout.model
+    else { return }
+    let kind: NamingKind
+    let key: String?
+    let p: LayoutPoint
+    var group = false
+    switch add {
+    case .group:
+      (kind, key, group) = (.group, nil, true)
+      p = point ?? simulation.spawnPoint(around: selection, depth: 0)
+    case .sibling(let i):
+      let node = layout.model.nodes[i]
+      (kind, key, group) = (.sibling, node.pathKey, node.depth == 0)
+      p = simulation.spawnPoint(around: group ? i : node.parent, depth: node.depth)
+    case .child(let i):
+      let node = layout.model.nodes[i]
+      (kind, key) = (.child, node.pathKey)
+      p = simulation.spawnPoint(around: i, depth: node.depth + 1)
+    }
+    scene.showGhost(at: CGPoint(x: p.x, y: p.y), group: group)
+    startNaming(
+      (kind, key, p), text: "", radius: group ? 9 : 4, fontSize: group ? 16 : 13)
+  }
+
+  /// Double-click on a label: edit the name in place. Return saves, Esc cancels.
+  public func beginRename(_ index: Int) {
+    finishNaming(commit: true)
+    guard let layout = scene.layout, layout.nodes.indices.contains(index) else { return }
+    let node = layout.nodes[index]
+    startNaming(
+      (.rename, layout.model.nodes[index].pathKey, LayoutPoint(x: node.x, y: node.y)),
+      text: layout.model.nodes[index].name, radius: node.radius, fontSize: node.fontSize)
+  }
+
+  private func startNaming(
+    _ target: (kind: NamingKind, key: String?, point: LayoutPoint), text: String,
+    radius: Double, fontSize: Double
+  ) {
+    naming = target
+    let size = max(11, min(28, fontSize * scene.camera.zoom))
+    let font = GraphStyle.font(size: size) as NSFont
+    field.font = font
+    field.stringValue = text
+    let width = max(160, (text as NSString).size(withAttributes: [.font: font]).width + 40)
+    let height = ceil(size * 1.5) + 4
+    // Where the label starts: just below the dot.
+    let top = scene.camera.toScreen(
+      CGPoint(x: target.point.x, y: target.point.y + radius + 2))
+    field.frame = NSRect(
+      x: top.x - width / 2, y: bounds.height - top.y - height, width: width, height: height)
+    addSubview(field)
+    window?.makeFirstResponder(field)
+    field.currentEditor()?.selectAll(nil)
+  }
+
+  /// Commits a non-empty name (as a rename or an insert) or cancels. An empty new node is never
+  /// written, so cancelling it leaves the text as it was.
+  public func finishNaming(commit: Bool) {
+    guard let target = naming else { return }
+    naming = nil
+    let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    if window?.firstResponder === field.currentEditor() { window?.makeFirstResponder(self) }
+    field.removeFromSuperview()
+    let model = scene.layout?.model
+    let index = target.key.flatMap { key in model?.nodes.firstIndex { $0.pathKey == key } }
+    var edit: GraphEdit?
+    if commit && !name.isEmpty {
+      switch target.kind {
+      case .rename:
+        if let index, model?.nodes[index].name != name { edit = .rename(index, name) }
+      case .sibling: edit = index.map { .add(.sibling($0), name: name, at: target.point) }
+      case .child: edit = index.map { .add(.child($0), name: name, at: target.point) }
+      case .group: edit = .add(.group, name: name, at: target.point)
+      }
+    }
+    // The ghost stays until the rebuilt graph replaces it with the real node.
+    if edit.flatMap({ onEdit?($0) }) != true { scene.hideGhost() }
+  }
+
+  public func control(
+    _ control: NSControl, textView: NSTextView, doCommandBy selector: Selector
+  ) -> Bool {
+    switch selector {
+    case #selector(cancelOperation(_:)), #selector(NSResponder.complete(_:)):
+      finishNaming(commit: false)
+    case #selector(insertNewline(_:)), #selector(insertTab(_:)):
+      finishNaming(commit: true)
+    default: return false
+    }
+    return true
+  }
+
+  /// Clicking elsewhere commits, like Finder.
+  public func controlTextDidEndEditing(_ notification: Notification) {
+    finishNaming(commit: true)
+  }
+
+  // MARK: Context menu
+
+  public override func menu(for event: NSEvent) -> NSMenu? {
+    finishNaming(commit: true)
+    let p = point(event)
+    let menu = NSMenu()
+    menu.autoenablesItems = false
+    func item(_ title: String, _ action: Selector, _ value: Any? = nil) -> NSMenuItem {
+      let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+      item.target = self
+      item.representedObject = value
+      return item
+    }
+    guard let index = scene.node(at: p, radius: 14), let model = scene.layout?.model else {
+      let w = scene.camera.toWorld(p)
+      menu.addItem(item("New Group", #selector(menuNewGroup(_:)), [w.x, w.y]))
+      return menu
+    }
+    if selection != index { userSelect(index, camera: false) }
+    let node = model.nodes[index]
+    menu.addItem(item("Add Task", #selector(menuAddTask(_:))))
+    menu.addItem(item("Add Subtask", #selector(menuAddSubtask(_:))))
+    menu.addItem(item("Rename", #selector(menuRename(_:))))
+    if node.depth > 0 {
+      menu.addItem(item(node.done ? "Mark Not Done" : "Mark Done", #selector(menuToggleDone(_:))))
+    }
+    let priority = NSMenuItem(title: "Priority", action: nil, keyEquivalent: "")
+    priority.submenu = NSMenu()
+    priority.submenu?.autoenablesItems = false
+    for (title, value) in [
+      ("High", MapPriority.high), ("Medium", .medium), ("Low", .low), ("Chill", .chill),
+    ] {
+      let choice = item(title, #selector(menuPriority(_:)), value.rawValue)
+      choice.state = node.priority == value ? .on : .off
+      priority.submenu?.addItem(choice)
+    }
+    priority.submenu?.addItem(item("None", #selector(menuPriority(_:)), ""))
+    menu.addItem(priority)
+    menu.addItem(.separator())
+    menu.addItem(item("Delete", #selector(menuDelete(_:))))
+    return menu
+  }
+
+  @objc private func menuNewGroup(_ sender: NSMenuItem) {
+    guard let w = sender.representedObject as? [Double] else { return }
+    beginAdd(.group, at: LayoutPoint(x: w[0], y: w[1]))
+  }
+  @objc private func menuAddTask(_ sender: Any?) { addTask() }
+  @objc private func menuAddSubtask(_ sender: Any?) { addSubtask() }
+  @objc private func menuRename(_ sender: Any?) { selection.map(beginRename) }
+  @objc private func menuToggleDone(_ sender: Any?) {
+    selection.map { _ = onEdit?(.toggleDone($0)) }
+  }
+  @objc private func menuPriority(_ sender: NSMenuItem) {
+    guard let selection, let raw = sender.representedObject as? String else { return }
+    _ = onEdit?(.priority(selection, MapPriority(rawValue: raw)))
+  }
+  @objc private func menuDelete(_ sender: Any?) { deleteSelection() }
 }

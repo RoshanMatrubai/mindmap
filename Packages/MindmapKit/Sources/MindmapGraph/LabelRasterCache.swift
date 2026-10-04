@@ -10,13 +10,13 @@ struct LabelRasterKey: Hashable, Sendable {
 
 struct LabelRasterResult: Sendable {
   var key: LabelRasterKey
-  var image: CGImage
+  var images: LabelImages
 }
 
 /// A bounded memory-only cache. Keys include text, font, size, scale and every drawn style.
 actor LabelRasterCache {
   static let shared = LabelRasterCache()
-  private var images: [LabelRasterKey: CGImage] = [:]
+  private var images: [LabelRasterKey: LabelImages] = [:]
   private var order: [LabelRasterKey] = []
 
   func render(_ keys: [LabelRasterKey]) -> [LabelRasterResult] {
@@ -31,12 +31,12 @@ actor LabelRasterCache {
     for key in keys {
       if Task.isCancelled { break }
       if let image = images[key] {
-        result.append(LabelRasterResult(key: key, image: image))
-      } else if let image = NodeRaster.image(look: key.look, scale: key.scale) {
+        result.append(LabelRasterResult(key: key, images: image))
+      } else if let image = NodeRaster.images(look: key.look, scale: key.scale) {
         misses += 1
         images[key] = image
         order.append(key)
-        result.append(LabelRasterResult(key: key, image: image))
+        result.append(LabelRasterResult(key: key, images: image))
         if order.count > 2048 { images.removeValue(forKey: order.removeFirst()) }
       }
     }

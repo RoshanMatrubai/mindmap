@@ -5,6 +5,8 @@ struct GraphDrag: Sendable, Equatable {
   var index: Int
   var point: LayoutPoint
   var active: Bool
+  /// ⇧-drag: the subtree follows.
+  var subtree = false
 }
 
 struct SimulationFrame: Sendable {
@@ -41,7 +43,7 @@ actor SimulationWorker {
     guard let drag, drag != appliedDrag else { return }
     appliedDrag = drag
     if dragged != drag.index {
-      simulation.beginDrag(drag.index)
+      simulation.beginDrag(drag.index, subtree: drag.subtree)
       dragged = drag.index
     }
     simulation.drag(to: drag.point)

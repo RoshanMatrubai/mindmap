@@ -32,6 +32,7 @@ struct OutlineEditor: NSViewRepresentable {
     view.maxSize = NSSize(
       width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
     view.onChange = { text in store.text = text }
+    view.onSelectionChange = { range in store.editorSelectionChanged(range) }
     view.load(store.text, map: store.documentID)
     scroll.documentView = view
     store.editorView = view
@@ -60,6 +61,10 @@ private func editorColor(_ hex: UInt32) -> NSColor {
 /// TextKit 2 owns layout. Syntax styling touches only paragraphs affected by an edit.
 final class OutlineTextView: NSTextView, @preconcurrency NSTextStorageDelegate {
   var onChange: ((String) -> Void)?
+  /// The cursor or selection moved (typing, clicks, arrows). Not for `selectLine`, so a graph
+  /// click that selects its line can't select again.
+  var onSelectionChange: ((NSRange) -> Void)?
+  private var quietSelection = false
   private(set) var mapID: UUID?
   private var styling = false
   private var unresolved: [NSRange] = []
@@ -90,6 +95,31 @@ final class OutlineTextView: NSTextView, @preconcurrency NSTextStorageDelegate {
         location: changedMap ? 0 : min(selection.location, (text as NSString).length), length: 0))
   }
 
+  override func setSelectedRanges(
+    _ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool
+  ) {
+    super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
+    if !stillSelecting && !quietSelection && !styling { onSelectionChange?(selectedRange()) }
+  }
+
+  /// Runs `body` without reporting selection changes.
+  func quietly(_ body: () -> Void) {
+    let old = quietSelection
+    quietSelection = true
+    body()
+    quietSelection = old
+  }
+
+  /// Graph → editor: selects a node's line and scrolls it into view.
+  func selectLine(_ range: NSRange) {
+    let length = (string as NSString).length
+    guard range.location <= length else { return }
+    let range = NSRange(
+      location: range.location, length: min(range.length, length - range.location))
+    quietly { setSelectedRange(range) }
+    scrollRangeToVisible(range)
+  }
+
   override func didChangeText() {
     super.didChangeText()
     typingAttributes = baseAttributes
@@ -114,6 +144,9 @@ final class OutlineTextView: NSTextView, @preconcurrency NSTextStorageDelegate {
       location: min(editedRange.location, storage.length),
       length: min(editedRange.length, max(0, storage.length - editedRange.location)))
     style((string as NSString).paragraphRange(for: bounded))
+    // Every character change passes here, including undo and redo, which don't always call
+    // didChangeText. The store must never hold text the editor doesn't show.
+    onChange?(string)
   }
 
   private func style(_ range: NSRange) {
@@ -201,9 +234,10 @@ final class OutlineTextView: NSTextView, @preconcurrency NSTextStorageDelegate {
     perform(OutlineEditing.moveBlock(text: string, selection: selectedRange(), up: false))
   }
 
-  /// Applies a change as one undo step. `false` when there was nothing to do.
+  /// Applies a change as one undo step. `false` when there was nothing to do. Graph edits use it
+  /// too, so they share the editor's undo stack.
   @discardableResult
-  private func perform(_ change: TextChange?) -> Bool {
+  func perform(_ change: TextChange?) -> Bool {
     guard let change, isEditable else { return false }
     breakUndoCoalescing()
     undoManager?.beginUndoGrouping()

@@ -9,7 +9,31 @@ public enum GraphStyle {
   static let edge = 0x6e6e75 as UInt32
   static let edgeOpacity = 0.55
   static let linkOpacity = 0.35
+  static let dimEdgeOpacity = 0.28
+  static let dimLinkOpacity = 0.15
+  static let litEdge = 0x6a4ff0 as UInt32
   static let titleColor = color(0x636366)
+
+  /// Label glyphs are rasterized in this color; dimmer label colors are its opacity over the halo.
+  static let brightLabel: UInt32 = 0xf2f2f7
+
+  /// The glyph opacity that turns `brightLabel` over the canvas into `hex` (channel average).
+  static func labelAlpha(_ hex: UInt32) -> Double {
+    let shifts: [UInt32] = [16, 8, 0]
+    let channel = { (value: UInt32, shift: UInt32) in Double((value >> shift) & 255) }
+    return shifts.map {
+      (channel(hex, $0) - channel(0x1e1e1e, $0))
+        / (channel(brightLabel, $0) - channel(0x1e1e1e, $0))
+    }.reduce(0, +) / 3
+  }
+
+  private static let palette = Dictionary(
+    uniqueKeysWithValues: [
+      0x0d0d0d, 0x141416, 0x55555a, 0x4a4a4e, 0x4f2fc4, 0xa1a1a6, 0x6a6a70, brightLabel,
+    ].map { ($0, color($0)) })
+
+  /// Node colors are made once and shared, so a selection allocates nothing per node.
+  static func cached(_ hex: UInt32) -> CGColor { palette[hex] ?? color(hex) }
 
   static func color(_ hex: UInt32, alpha: Double = 1) -> CGColor {
     CGColor(

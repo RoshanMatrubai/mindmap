@@ -29,6 +29,10 @@ final class MapStore {
   private(set) var parsedText = ""
   private(set) var isSwitching = true
   private(set) var graph: GraphUpdate?
+  /// The detail panel's content; nil without a selection.
+  private(set) var detail: NodeDetail?
+  /// The graph view is first responder, so Return, Tab, Delete, Esc and arrows act on the graph.
+  var graphFocused = false
   @ObservationIgnored weak var graphView: GraphView?
   @ObservationIgnored weak var editorView: NSTextView?
   @ObservationIgnored private var layoutState = LayoutSidecar(seed: LayoutSidecar.randomSeed())
@@ -39,6 +43,15 @@ final class MapStore {
   @ObservationIgnored private var freshNext = true
   @ObservationIgnored private var switchPending = false
   @ObservationIgnored private var switchDocumentID: UUID?
+  /// What to select once the graph shows the parse of the current text.
+  private enum PendingSelection {
+    case keep, cursor
+    case location(Int)
+    case clear
+  }
+  @ObservationIgnored private var pendingSelection = PendingSelection.keep
+  /// Where a node added on the graph appears: the start of its new line and its world point.
+  @ObservationIgnored private var pendingPlacement: (location: Int, point: LayoutPoint)?
   var errorMessage: String?
   private var savedText = ""
   private var loaded: MapRepository.Loaded?
@@ -91,6 +104,7 @@ final class MapStore {
     let restore = restoreNext || (!hasPrevious && !freshNext && !state.positions.isEmpty)
     let fresh = freshNext || (!hasPrevious && !restore)
     let refit = refitNext || !hasPrevious
+    let placement = pendingPlacement
     restoreNext = false
     freshNext = false
     refitNext = false
@@ -126,9 +140,13 @@ final class MapStore {
             model: model, sidecar: state, today: today, calendar: calendar,
             measure: GraphStyle.measure)
         } else if let previous {
+          let placed = placement.flatMap { p in
+            model.nodes.first { $0.sourceRange.location == p.location && $0.sourceRange.length > 0 }
+              .map { [$0.id: p.point] }
+          }
           simulation = LayoutSimulation(
-            previous: previous, model: model, pins: pins, today: today,
-            calendar: calendar, measure: GraphStyle.measure)
+            previous: previous, model: model, pins: pins, placements: placed ?? [:],
+            today: today, calendar: calendar, measure: GraphStyle.measure)
         } else {
           simulation = LayoutSimulation(
             model: model, seed: state.seed, pins: state.pins, today: today,
@@ -144,6 +162,7 @@ final class MapStore {
       guard !Task.isCancelled, documentID == identity, text == snapshot else { return }
       model = result
       parsedText = snapshot
+      if placement != nil { pendingPlacement = nil }
       layoutState.pins = simulation.pins
       graph = GraphUpdate(
         layout: simulation.layout, simulation: simulation, refit: refit,
@@ -208,6 +227,134 @@ final class MapStore {
     do { try await repository.saveLayout(layoutState, document: documentID) } catch {
       hasUnsavedLayout = true
       report("save layout", error)
+    }
+  }
+
+  // MARK: Selection and graph edits
+
+  /// The graph shows the parse of the current text, so its indices and the text's ranges agree.
+  private var graphIsCurrent: Bool {
+    parsedText == text && graphView?.scene.layout?.model == model
+  }
+
+  private var outline: OutlineTextView? { editorView as? OutlineTextView }
+
+  /// Graph → editor: a click, arrow key or right-click selected a node (or cleared it).
+  func graphSelected(_ index: Int?) {
+    refreshDetail()
+    guard let index, graphIsCurrent, model.nodes.indices.contains(index) else { return }
+    outline?.selectLine(model.nodes[index].sourceRange)
+  }
+
+  /// Editor → graph: the cursor moved. Highlights its line's node without moving the camera.
+  func editorSelectionChanged(_ range: NSRange) {
+    guard graphIsCurrent else {
+      pendingSelection = .cursor
+      return
+    }
+    pendingSelection = .keep
+    selectNode(at: range.location)
+  }
+
+  /// A linked name in the detail panel: select it like a graph click.
+  func selectLinked(_ index: Int) {
+    graphView?.select(index, camera: true)
+    graphSelected(graphView?.selection)
+  }
+
+  private func selectNode(at location: Int) {
+    graphView?.select(Selection.node(model, atLocation: location), camera: false)
+    refreshDetail()
+  }
+
+  /// After the view shows a new graph: apply the selection an edit asked for, then refresh the
+  /// panel (counts and urgency may have changed).
+  func graphDidUpdate() {
+    guard graphIsCurrent else { return refreshDetail() }
+    switch pendingSelection {
+    case .keep: break
+    case .cursor: selectNode(at: outline?.selectedRange().location ?? 0)
+    case .location(let location): selectNode(at: location)
+    case .clear: graphView?.select(nil, camera: false)
+    }
+    pendingSelection = .keep
+    refreshDetail()
+  }
+
+  private func refreshDetail() {
+    guard let layout = graphView?.scene.layout, let index = graphView?.selection else {
+      detail = nil
+      return
+    }
+    let next = Selection.detail(layout.model, urgency: layout.nodes.map(\.urgency), of: index)
+    if next != detail { detail = next }
+  }
+
+  /// Applies a graph edit as a text replacement through the editor, so it is one step in the
+  /// editor's undo stack, autosaves and re-parses (at once, not debounced) like typing.
+  @discardableResult
+  func applyGraphEdit(_ edit: GraphEdit) -> Bool {
+    guard graphIsCurrent, let outline, outline.isEditable, outline.string == text else {
+      log.notice("graph edit skipped: graph not current")
+      return false
+    }
+    let nodes = model.nodes
+    var placement: LayoutPoint?
+    let change: TextChange?
+    switch edit {
+    case .add(let add, let name, let point):
+      placement = point
+      switch add {
+      case .sibling(let i):
+        change = OutlineEditing.insertSibling(text: text, model: model, after: i, name: name)
+      case .child(let i):
+        change = OutlineEditing.appendChild(text: text, model: model, to: i, name: name)
+      case .group: change = OutlineEditing.appendGroup(text: text, name: name)
+      }
+    case .rename(let i, let name):
+      change = OutlineEditing.rename(text: text, model: model, node: i, to: name)
+    case .toggleDone(let i):
+      change = OutlineEditing.toggleDone(
+        text: text, selection: NSRange(location: nodes[i].sourceRange.location, length: 0))
+    case .priority(let i, let priority):
+      change = OutlineEditing.setPriority(text: text, model: model, node: i, priority)
+    case .delete(let i):
+      change = OutlineEditing.deleteBranch(text: text, model: model, node: i)
+    }
+    guard let change else { return false }
+    // Deleting a group clears the selection; deleting a task selects its parent.
+    if case .delete(let i) = edit, nodes[i].parent == nil {
+      pendingSelection = .clear
+    } else {
+      pendingSelection = .location(change.selection.location)
+    }
+    pendingPlacement = placement.map { (change.selection.location, $0) }
+    var applied = false
+    outline.quietly { applied = outline.perform(change) }
+    guard applied else {
+      pendingPlacement = nil
+      return false
+    }
+    outline.selectLine(change.selection)
+    scheduleParse(debounce: false)
+    return true
+  }
+
+  /// The selected node, when the graph shows the current text.
+  private var editableSelection: Int? { graphIsCurrent ? graphView?.selection : nil }
+
+  func setPriority(_ priority: MapPriority?) {
+    if let i = editableSelection { applyGraphEdit(.priority(i, priority)) }
+  }
+
+  func toggleDone(_ index: Int) { applyGraphEdit(.toggleDone(index)) }
+
+  /// ⇧⌘X with the graph focused toggles the selected task; otherwise the editor's lines.
+  func toggleDoneFromMenu() {
+    if graphFocused, let i = editableSelection {
+      applyGraphEdit(.toggleDone(i))
+    } else {
+      NSApp.sendAction(#selector(OutlineTextView.toggleDone(_:)), to: nil, from: nil)
     }
   }
 
@@ -320,6 +467,11 @@ final class MapStore {
       currentURL = url
       documentID = identity
       switchDocumentID = identity
+      // A map switch clears the selection.
+      graphView?.select(nil, camera: false)
+      pendingSelection = .keep
+      pendingPlacement = nil
+      detail = nil
       loaded = result
       layoutState = remembered ?? LayoutSidecar(seed: LayoutSidecar.randomSeed())
       refitNext = true

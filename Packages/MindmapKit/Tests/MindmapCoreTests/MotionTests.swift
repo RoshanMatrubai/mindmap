@@ -153,6 +153,42 @@ private func overlap(_ a: GraphNode, _ b: GraphNode) -> Bool {
   #expect(sim.snapshotSidecar().pins == sim.pins)
 }
 
+@Test func plainDragMovesOnlyTheNodeAndPinsIt() {
+  let old = motionLayout(
+    "t\ng\n- a\n\t- child\nh\n- far",
+    points: [
+      .init(x: 0, y: -100), .init(x: 0, y: 0), .init(x: 70, y: 0),
+      .init(x: 1000, y: 0), .init(x: 1100, y: 0),
+    ])
+  var sim = LayoutSimulation(
+    previous: old, model: old.model, today: motionDay, calendar: motionCalendar)
+  sim.beginDrag(1, subtree: false)
+  sim.drag(to: .init(x: -200, y: 100))
+  sim.advance(by: 0.25)
+  #expect(point(sim.layout, 1) == .init(x: -200, y: 100))
+  for i in [0, 2, 3, 4] { #expect(point(sim.layout, i) == point(old, i)) }
+  sim.endDrag()
+  finish(&sim)
+  #expect(sim.isFrozen)
+  #expect(sim.pins == ["g/a": .init(x: -200, y: 100)])
+}
+
+@Test func placedNewNodeStartsAtItsPointAndOnlyCollides() {
+  let old = motionLayout(
+    "t\ng\n- a\nh\n- far",
+    points: [.init(x: 0, y: 0), .init(x: 100, y: 0), .init(x: 1000, y: 0), .init(x: 1100, y: 0)])
+  let model = motionModel("t\ng\n- a\nh\n- far\nnew")
+  var sim = LayoutSimulation(
+    previous: old, model: model, placements: [4: .init(x: 500, y: 500)], today: motionDay,
+    calendar: motionCalendar)
+  #expect(point(sim.layout, 4) == .init(x: 500, y: 500))
+  finish(&sim)
+  #expect(point(sim.layout, 4) == .init(x: 500, y: 500))
+  for i in 0..<4 { #expect(point(sim.layout, i) == point(old, i)) }
+  let spawned = sim.spawnPoint(around: 0, depth: 1)
+  #expect(abs(hypot(spawned.x, spawned.y) - 105) < 1e-9)
+}
+
 @Test func fixedTickRateMatchesAcrossDisplayRefreshRates() {
   let model = motionModel("t\ng\n- a\n- b")
   var sixty = LayoutSimulation(model: model, seed: 42, today: motionDay, calendar: motionCalendar)
@@ -342,7 +378,7 @@ private func depth(_ a: GraphNode, _ b: GraphNode) -> Double {
     for j in layout.nodes.indices where j != i {
       let before =
         subtree.contains(i) || subtree.contains(j) ? 0 : depth(old.nodes[i], old.nodes[j])
-      #expect(depth(layout.nodes[i], layout.nodes[j]) <= before + 6, "\(i) overlaps \(j)")
+      #expect(depth(layout.nodes[i], layout.nodes[j]) <= before + 6, "\(i) overlaps \(j) by \(depth(layout.nodes[i], layout.nodes[j])), before \(before)")
     }
   }
   #expect(sim.affected.contains(dragged))

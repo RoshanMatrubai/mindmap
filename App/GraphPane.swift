@@ -10,6 +10,9 @@ struct GraphPane: NSViewRepresentable {
     view.onFreeze = { document, layout, pins in
       store.graphFrozen(document: document, layout, pins: pins)
     }
+    view.onSelect = { index in store.graphSelected(index) }
+    view.onEdit = { edit in store.applyGraphEdit(edit) }
+    view.onFocus = { focused in store.graphFocused = focused }
     store.graphView = view
     return view
   }
@@ -27,9 +30,12 @@ struct GraphPane: NSViewRepresentable {
       graph.simulation, title: (title.isEmpty ? "untitled map" : title).lowercased(),
       refit: graph.refit, reuseNodes: graph.reuseNodes, document: graph.documentID
     )
+    // Not during this SwiftUI update: the store's observed state changes.
+    Task { @MainActor in store.graphDidUpdate() }
     #if DEBUG
       DebugLaunch.zoomOnce(view)
       DebugLaunch.reshuffleOnce(store)
+      DebugLaunch.selectOnce(view, store)
     #endif
   }
 
