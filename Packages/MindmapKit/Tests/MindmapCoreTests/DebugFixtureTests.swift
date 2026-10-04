@@ -1,10 +1,12 @@
 import Foundation
 import Testing
 
-/// App/Debug/sample.mindmap (bundled into Debug builds for `-fixture sample`) must match the test fixture.
-@Test func debugFixtureMatchesTestFixture() throws {
+/// Bundled debug fixtures must match the stable test inputs used for motion benchmarks.
+@Test(arguments: ["sample", "large"])
+func debugFixtureMatchesTestFixture(_ name: String) throws {
   let appCopy = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent().deletingLastPathComponent()
-    .appendingPathComponent("../../../App/Debug/sample.mindmap").standardized
-  #expect(try Data(contentsOf: appCopy) == Data(contentsOf: fixtureURL))
+    .appendingPathComponent("../../../App/Debug/" + name + ".mindmap").standardized
+  let source = fixtureURL.deletingLastPathComponent().appendingPathComponent(name + ".mindmap")
+  #expect(try Data(contentsOf: appCopy) == Data(contentsOf: source))
 }

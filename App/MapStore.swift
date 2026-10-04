@@ -2,13 +2,16 @@ import AppKit
 import MindmapCore
 import MindmapGraph
 import Observation
+import os
 
-/// A frozen layout for the graph pane. `generation` changes only when there is something new to
-/// draw; `refit` asks the pane to fit everything again (new map, reshuffle).
+/// A simulation and its initial or most recently frozen presentation.
 struct GraphUpdate {
-  let layout: GraphLayout
+  var layout: GraphLayout
+  let simulation: LayoutSimulation
   let refit: Bool
+  let reuseNodes: Bool
   let generation: Int
+  let documentID: UUID
 }
 
 @MainActor @Observable
@@ -32,6 +35,10 @@ final class MapStore {
   @ObservationIgnored private var layoutSaveTask: Task<Void, Never>?
   @ObservationIgnored private(set) var hasUnsavedLayout = false
   @ObservationIgnored private var refitNext = true
+  @ObservationIgnored private var restoreNext = false
+  @ObservationIgnored private var freshNext = true
+  @ObservationIgnored private var switchPending = false
+  @ObservationIgnored private var switchDocumentID: UUID?
   var errorMessage: String?
   private var savedText = ""
   private var loaded: MapRepository.Loaded?
@@ -41,6 +48,8 @@ final class MapStore {
   private var saveTask: Task<Void, Never>?
   private var parseTask: Task<Void, Never>?
   private var renameTask: Task<Void, Never>?
+  private var switchStarted = ContinuousClock.now
+  private let performance = OSLog(subsystem: Bundle.main.bundleIdentifier!, category: "motion")
   private static let bookmarkKey = "mapsFolderBookmark"
   private static let lastMapKey = "lastOpenMap"
   var hasUnsavedEdits: Bool { text != savedText }
@@ -71,45 +80,115 @@ final class MapStore {
     if MapDocument.title(of: text) != oldTitle { scheduleRename() }
   }
 
-  /// Parse and run the whole layout off the main thread, then hand the frozen result to the graph.
-  /// Each rebuild uses the map's seed; pinned nodes are fixed points.
+  /// Edits start from the displayed positions, not the original seed. Parsing and preparing
+  /// collision boxes stay off the main thread; only moving graphs get display ticks.
   private func scheduleParse(debounce: Bool = true) {
     parseTask?.cancel()
     let snapshot = text
-    let seed = layoutState.seed
-    let pins = layoutState.pins
+    let identity = documentID
+    let state = layoutState
+    let hasPrevious = graph?.documentID == identity
+    let restore = restoreNext || (!hasPrevious && !freshNext && !state.positions.isEmpty)
+    let fresh = freshNext || (!hasPrevious && !restore)
+    let refit = refitNext || !hasPrevious
+    restoreNext = false
+    freshNext = false
+    refitNext = false
     parseTask = Task {
       if debounce {
         do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
       }
+      var previousSimulation: LayoutSimulation?
+      if !fresh && !restore {
+        // The view may not have shown this map's latest graph yet. Never match against another map.
+        previousSimulation = await graphView?.simulationSnapshot(for: identity)
+        if previousSimulation == nil, let graph, graph.documentID == identity {
+          previousSimulation = graph.simulation
+        }
+      }
+      let previous = previousSimulation?.layout
+      let pins = previousSimulation?.pins ?? state.pins
+      guard !Task.isCancelled, documentID == identity else { return }
       let today = Date()
       let calendar = Calendar.current
-      let (result, layout) = await Task.detached(priority: .userInitiated) {
+      let (result, simulation) = await Task.detached(priority: .userInitiated) {
+        let performance = OSLog(subsystem: Bundle.main.bundleIdentifier!, category: "motion")
+        let parseStart = ContinuousClock.now
+        os_signpost(.begin, log: performance, name: "Parse")
         let model = MapParser.parse(text: snapshot, today: today, calendar: calendar)
-        let layout = ForceLayout.run(
-          model: model, seed: seed, pins: pins, today: today, calendar: calendar,
-          measure: GraphStyle.measure)
-        return (model, layout)
+        os_signpost(.end, log: performance, name: "Parse")
+        let parseMS = Self.milliseconds(parseStart.duration(to: .now))
+        let layoutStart = ContinuousClock.now
+        os_signpost(.begin, log: performance, name: "LayoutPreparation")
+        let simulation: LayoutSimulation
+        if restore {
+          simulation = LayoutSimulation(
+            model: model, sidecar: state, today: today, calendar: calendar,
+            measure: GraphStyle.measure)
+        } else if let previous {
+          simulation = LayoutSimulation(
+            previous: previous, model: model, pins: pins, today: today,
+            calendar: calendar, measure: GraphStyle.measure)
+        } else {
+          simulation = LayoutSimulation(
+            model: model, seed: state.seed, pins: state.pins, today: today,
+            calendar: calendar, measure: GraphStyle.measure)
+        }
+        os_signpost(.end, log: performance, name: "LayoutPreparation")
+        let layoutMS = Self.milliseconds(layoutStart.duration(to: .now))
+        log.notice(
+          "motion prepare nodes=\(model.nodeCount) parse-ms=\(parseMS, privacy: .public) layout-ms=\(layoutMS, privacy: .public)"
+        )
+        return (model, simulation)
       }.value
-      guard !Task.isCancelled, text == snapshot else { return }
+      guard !Task.isCancelled, documentID == identity, text == snapshot else { return }
       model = result
       parsedText = snapshot
+      layoutState.pins = simulation.pins
       graph = GraphUpdate(
-        layout: layout, refit: refitNext, generation: (graph?.generation ?? 0) + 1)
-      refitNext = false
+        layout: simulation.layout, simulation: simulation, refit: refit,
+        reuseNodes: !restore && !fresh, generation: (graph?.generation ?? 0) + 1,
+        documentID: identity)
     }
+  }
+
+  /// A freeze records all positions, including nodes pushed during a drag.
+  func graphFrozen(document: UUID, _ layout: GraphLayout, pins: [String: LayoutPoint]) {
+    guard document == documentID, layout.model == model else { return }
+    graph?.layout = layout
+    layoutState = LayoutSidecar(
+      seed: layout.seed, pins: pins,
+      positions: Dictionary(
+        uniqueKeysWithValues: zip(layout.model.nodes, layout.nodes).map {
+          ($0.0.pathKey, LayoutPoint(x: $0.1.x, y: $0.1.y))
+        }))
+    scheduleLayoutSave()
+  }
+
+  /// Saving current worker positions also covers a switch or Quit during an animation.
+  private func captureLayout() async {
+    parseTask?.cancel()
+    guard let simulation = await graphView?.stopAndSnapshot(for: documentID),
+      simulation.layout.model == model
+    else { return }
+    layoutState = simulation.snapshotSidecar()
+    graph?.layout = simulation.layout
+    hasUnsavedLayout = true
   }
 
   /// ⇧⌘R: a new seed, no pins, a fresh layout fitted to the window.
   func reshuffle() {
     layoutState = LayoutSidecar(seed: LayoutSidecar.randomSeed())
     refitNext = true
+    freshNext = true
+    restoreNext = false
     scheduleParse(debounce: false)
     scheduleLayoutSave()
   }
 
   /// A dropped node stays where it was put until reshuffle.
-  func pin(_ key: String, at point: LayoutPoint) {
+  func pin(document: UUID, _ key: String, at point: LayoutPoint) {
+    guard document == documentID else { return }
     layoutState.pins[key] = point
     scheduleLayoutSave()
   }
@@ -127,6 +206,7 @@ final class MapStore {
     guard hasUnsavedLayout, currentURL != nil else { return }
     hasUnsavedLayout = false
     do { try await repository.saveLayout(layoutState, document: documentID) } catch {
+      hasUnsavedLayout = true
       report("save layout", error)
     }
   }
@@ -195,6 +275,7 @@ final class MapStore {
 
   func switchMap(_ url: URL) {
     guard !isSwitching, url != currentURL else { return }
+    beginSwitch()
     isSwitching = true
     Task {
       defer { isSwitching = false }
@@ -207,7 +288,10 @@ final class MapStore {
   }
 
   func newMap() {
+    log.notice(
+      "motion new-map requested switching=\(self.isSwitching) folder=\(self.folder != nil)")
     guard !isSwitching, let folder else { return }
+    beginSwitch()
     isSwitching = true
     Task {
       defer { isSwitching = false }
@@ -220,24 +304,33 @@ final class MapStore {
   }
 
   private func open(_ url: URL) async {
+    await captureLayout()
+    beginSwitch()
     layoutSaveTask?.cancel()
     await saveLayout()
     do {
       let identity = UUID()
+      let readStart = ContinuousClock.now
+      os_signpost(.begin, log: performance, name: "FileRead")
       let result = try await repository.open(url, document: identity)
+      os_signpost(.end, log: performance, name: "FileRead")
+      log.notice(
+        "motion file-read ms=\(Self.milliseconds(readStart.duration(to: .now)), privacy: .public)")
       let remembered = await repository.loadLayout(document: identity)
       currentURL = url
       documentID = identity
+      switchDocumentID = identity
       loaded = result
       layoutState = remembered ?? LayoutSidecar(seed: LayoutSidecar.randomSeed())
       refitNext = true
-      if remembered == nil { scheduleLayoutSave() }
+      restoreNext = remembered != nil
+      freshNext = remembered == nil
       savedText = result.text
       loadingText = true
       text = result.text
       loadingText = false
       remember()
-      scheduleParse()
+      scheduleParse(debounce: false)
       try await refreshMaps()
       scheduleRename()
     } catch { report("open map", error) }
@@ -359,6 +452,7 @@ final class MapStore {
 
   func finishSaving() async -> Bool {
     isSwitching = true
+    await captureLayout()
     layoutSaveTask?.cancel()
     await saveLayout()
     let result = await save()
@@ -368,6 +462,28 @@ final class MapStore {
 
   private func remember() {
     UserDefaults.standard.set(currentURL?.lastPathComponent, forKey: Self.lastMapKey)
+  }
+
+  private func beginSwitch() {
+    guard !switchPending else { return }
+    switchStarted = .now
+    switchPending = true
+    switchDocumentID = nil
+    os_signpost(.begin, log: performance, name: "MapSwitch")
+  }
+
+  func graphShown(document: UUID) {
+    guard switchPending, switchDocumentID == document, documentID == document else { return }
+    switchPending = false
+    os_signpost(.end, log: performance, name: "MapSwitch")
+    log.notice(
+      "motion switch nodes=\(self.model.nodeCount) first-frame-ms=\(Self.milliseconds(self.switchStarted.duration(to: .now)), privacy: .public)"
+    )
+  }
+
+  nonisolated private static func milliseconds(_ duration: Duration) -> Double {
+    let c = duration.components
+    return Double(c.seconds) * 1000 + Double(c.attoseconds) / 1e15
   }
 
   private func report(_ action: String, _ error: Error) {

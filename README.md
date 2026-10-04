@@ -34,12 +34,13 @@ errands
 | `[[name]]` | a dashed link to another task or group |
 
 - click a group or task to highlight its branch and zoom in. click empty space to zoom back out. (coming soon)
-- pinch to zoom, two fingers to move around.
-- drag a node to move it. it stays where you put it until you reshuffle (⇧⌘R).
+- pinch or use the mouse wheel to zoom, two fingers to move around.
+- editing adds or removes nodes without rearranging your map.
+- drag a node to move it. its subtasks follow and crowded neighbors move aside. it stays where you put it until you reshuffle (⇧⌘R).
 - press enter to continue a list, tab to indent, shift+tab to go back out. it works just like notes.
 - press ⌘N for a new map.
 - `/high` tasks can show up in the Calendar app. this is off by default; turn it on in settings (⌘,). (coming soon)
-- the forces panel changes how the map spreads out. hit reshuffle for a new layout. (coming soon)
+- hit reshuffle (⇧⌘R) for a new animated layout. the forces panel is coming soon.
 
 your maps are saved automatically as plain text files in a folder you choose the first time you open the app (we suggest Documents/mindmap, which keeps them private from other apps). nothing is ever saved inside this project folder.
 
@@ -50,7 +51,7 @@ your maps are saved automatically as plain text files in a folder you choose the
 | return | continue the list |
 | tab / shift+tab | indent / outdent the bullet |
 | ⌘] / ⌘[ | indent / outdent the current or selected bullets |
-| ⇧⌘U | mark the current or selected tasks done, or not done |
+| ⇧⌘X | mark the current or selected tasks done, or not done |
 | ⌃⌘↑ / ⌃⌘↓ | move a task and its subtasks up / down |
 | ⌘N | new map |
 | ⇧⌘] / ⇧⌘[ | next / previous map |

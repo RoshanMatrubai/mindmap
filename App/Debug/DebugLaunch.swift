@@ -46,6 +46,18 @@
     }
     @MainActor private static var zoomed = false
 
+    /// `-reshuffle-after 3` reshuffles once, that many seconds after launch, to capture the settle.
+    @MainActor static func reshuffleOnce(_ store: MapStore) {
+      let seconds = UserDefaults.standard.double(forKey: "reshuffle-after")
+      guard seconds > 0, !reshuffled else { return }
+      reshuffled = true
+      Task {
+        try? await Task.sleep(for: .seconds(seconds))
+        store.reshuffle()
+      }
+    }
+    @MainActor private static var reshuffled = false
+
     /// Without `-use-folder-picker YES`, maps go in a folder inside the dev container: no picker,
     /// no prompts, so the agent debug loop runs unattended. With it, Debug behaves like Release.
     static var containerMapsFolder: URL? {

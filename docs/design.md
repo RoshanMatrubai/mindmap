@@ -31,7 +31,7 @@ When 1 and 2 conflict, 1 wins during interaction and 2 wins the moment interacti
 | Dimmed (not selected) | Nodes 30%, edges 28%, cross links 15%. Linked nodes in other groups 80% |
 | Priority colors (detail panel) | high `#c98589`, medium `#c2a26a`, low/chill `#7f9cd1` |
 
-Labels from the same group must never overlap each other. Labels from different groups may overlap; that clutter is intentional.
+The full prototype settle prevents overlap within each group and between group labels. Labels from different groups may overlap during that settle; that clutter is intentional. Local edits and dragging push aside any overlapped label box, including across groups.
 
 ## Interaction
 
@@ -44,7 +44,7 @@ Labels from the same group must never overlap each other. Labels from different 
 
 ## Layout: force simulation
 
-This is the heart of the look: a d3-force style simulation, run once per change, then frozen. The prototype's `tick()`, `collide()` and `build()` functions are the reference implementation.
+This is the heart of the look: a d3-force style simulation, animated when needed, then frozen. The prototype's `tick()`, `collide()` and `build()` functions are the reference implementation.
 
 Each tick, with `alpha` decaying from 1 toward 0 by 2% per tick:
 
@@ -63,7 +63,7 @@ Stop when alpha drops below 0.003 (about 300 ticks), run a hard collision pass, 
 Starting positions:
 
 - Fresh build or reshuffle: uniform random in a disk of radius 650 from a new seed.
-- Text edit: warm start. Nodes keep their old position (matched on full path, `school/calc iii work`); new nodes spawn near their parent; reheat to alpha 0.3 instead of 1. Typing should nudge the map, not rebuild it.
+- Text edit: local relaxation. Only new, moved or overlapping nodes and their collision cascade can move. Every other node keeps its exact position. This replaces the brief's warm-start reheat to alpha 0.3 at the user's request.
 
 ## Decisions for the graph (steps 2 and 3)
 
@@ -73,17 +73,32 @@ Step 2 (built):
 - The implicit `loose` group is drawn like any group.
 - Each map remembers its layout seed, so reopening shows the same layout. Reshuffle (⇧⌘R) picks a new seed and clears pins.
 - Zoom range: from 1/10 of "fit all" out to 10× "fit all" in.
-- Input. Trackpad: two-finger scroll pans, pinch zooms about the cursor. Mouse: the wheel zooms about the cursor, dragging empty canvas pans. Zoom in, zoom out and fit buttons top right. Camera moves from buttons and shortcuts animate about 380 ms, ease-out cubic, as Core Animation keyframes. Fit all on first show, rebuild and window resize until the user pans or zooms.
-- Typing: each debounced parse rebuilds the layout instantly with the map's seed (warm start comes in step 3). Pinned nodes keep their positions.
-- Dragging a node (4 px threshold, about 14 px hit radius) moves it; its edges and cross links follow and nothing else moves. No physics during the drag.
+- Input. Trackpad: two-finger scroll pans, pinch zooms about the cursor. Mouse: the wheel zooms about the cursor, dragging empty canvas pans. Scroll events with a gesture or momentum phase (trackpad, Magic Mouse) pan; events with neither (any wheel, including smooth-scrolling mice with precise deltas) zoom, 12% per line or 10 points, at most 1.5× per event. Zoom in, zoom out and fit buttons top right. Camera moves from buttons and shortcuts animate about 380 ms, ease-out cubic, as Core Animation keyframes. Fit all on first show, rebuild and window resize until the user pans or zooms.
+- Typing and dragging now use the step 3a rules below. Pinned nodes keep their positions unless explicitly dragged.
+- Dragging a node uses a 4 px threshold and about 14 px hit radius. Its edges and cross links follow. Step 3a adds subtree springs and collision cascades.
 - After a drop the node is pinned there until reshuffle. Rebuilds treat pinned nodes as fixed points.
-- Layout state lives in a hidden sidecar next to the map, `.<map file name>.layout.json`: the seed and pinned positions keyed by node path key. It is renamed with the map and written debounced (500 ms). Never in the container, because pin keys contain task names. The dev app's sidecars live in its own dev maps folder.
+- Layout state lives in a hidden sidecar next to the map, `.<map file name>.layout.json`. Version 2 stores the seed, pins and every node's position keyed by path key. Version 1 sidecars (seed and pins) migrate by computing the seeded layout once. The sidecar follows map renames and saves after a freeze (500 ms debounce), on map switch and on quit. Never in the settings container, because keys contain task names. The dev app's sidecars live in its own dev maps folder.
 
-Step 3 (planned):
+Step 3a (motion):
 
-- Neighbors react live while a node is dragged, then the graph refreezes.
-- Return adds a task after the selected task's branch; Tab adds a subtask as the last child; the name is then typed inline on the graph. Double-click empty canvas adds a group. Right-click offers the same actions.
-- Delete removes the node and its subtasks from the text with no confirmation. ⌘Z undoes it, and the undo history is shared with the editor.
+| Change | Motion rule |
+|---|---|
+| Add text | Only new nodes and nodes they overlap move. A new node spawns about one link distance from its parent at the least crowded angle. Label overlaps push nodes apart smoothly, with cascades allowed. Every node outside that affected set moves by exactly zero. |
+| Delete text | Remove the deleted node's layer. A quick fade is allowed. Nothing else moves. |
+| Rename | Keep the node's position. If the grown label overlaps a neighbor, run the same collision cascade. |
+| Change level or move lines | Match the existing node, start at its old position and glide toward its new parent. Resolve overlaps locally. |
+| Drag | The dragged node follows the cursor. Its subtree follows on springs with the normal layout constants. Other nodes move only after an overlap joins them to the affected set. On release, pin the dragged node, settle and freeze. |
+| Open or switch maps | Display saved positions instantly without animation. Place nodes absent from the sidecar using the add-text rule. |
+| Reshuffle or new map without saved positions | Animate the full prototype settle, then freeze. Ease the camera to fit until the user pans or zooms, matching the prototype's `follow` behavior. Reshuffle clears pins. |
+| Done toggle | ⇧⌘X replaces ⇧⌘U. The Outline menu owns the shortcut, including while a text view has focus. |
+
+Node identity matches the path key first, then a rename at the same sibling position under the same parent, then an unmatched node with the same name nearest in document order. Unmatched nodes are additions or deletions.
+
+Local relaxation runs springs and repulsion for new, moved and dragged nodes, and collisions for the whole affected free set, against fixed neighbors. A free node's overlapping neighbors join that set and can push further neighbors; nodes that join this way only collide, so they move aside rather than away. Overlaps that already existed between two nodes the change didn't move are tolerated at their starting depth (close pairs may use up the margin) but never made worse, so one change doesn't ripple through the settle's intentional cross-group clutter. Fixed nodes never move. A held drag cools and only pointer motion reheats it. Local settling freezes when nothing moves, or at most 5 s after a release or edit. Neighbor searches use a uniform grid.
+
+An NSView display link exists only while the graph is moving or a drag is active, and stops as soon as the graph freezes. Simulation ticks run off the main thread at a fixed 120 ticks per second, independent of display refresh rate. The main thread applies layer positions once per display frame with implicit Core Animation actions disabled. Occluded windows pause the simulation. Worker frames, snapshots and freeze or pin callbacks carry the document they belong to; after a map switch, results for the previous map are dropped. Labels rasterize off the main thread and cache by text, font, size, scale and style; unchanged node layers are reused.
+
+Step 3b (planned): selection and highlighting, camera fit to a selection, editor↔graph sync, the detail panel, adding and removing nodes from the graph and arrow-key selection navigation. Return adds a task after the selected branch; Tab adds the last child, followed by inline naming. Double-click empty canvas adds a group. Context menus expose the same actions. Delete removes the node and descendants with shared editor undo.
 
 ## Settings
 

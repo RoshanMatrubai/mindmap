@@ -23,11 +23,6 @@ struct MindmapApp: App {
     AppLifecycle.store = store
   }
 
-  /// Editor commands go to whichever outline editor has focus.
-  private func send(_ action: Selector) {
-    NSApp.sendAction(action, to: nil, from: nil)
-  }
-
   var body: some Scene {
     WindowGroup {
       ContentView(store: store)
@@ -35,47 +30,29 @@ struct MindmapApp: App {
     .defaultSize(width: 1400, height: 900)
     .commands {
       CommandGroup(replacing: .newItem) {
-        Button("New Map") { store.newMap() }
-          .keyboardShortcut("n", modifiers: .command)
-          .disabled(store.folder == nil || store.isSwitching)
+        AppCommand.newMap.button(store)
         Button("Change Maps Folder…") { store.chooseFolder() }
         Divider()
-        Button("Next Map") { store.switchMap(by: 1) }
-          .keyboardShortcut("]", modifiers: [.command, .shift])
-          .disabled(store.maps.count < 2 || store.isSwitching)
-        Button("Previous Map") { store.switchMap(by: -1) }
-          .keyboardShortcut("[", modifiers: [.command, .shift])
-          .disabled(store.maps.count < 2 || store.isSwitching)
+        AppCommand.nextMap.button(store)
+        AppCommand.previousMap.button(store)
       }
       CommandMenu("Outline") {
-        Button("Toggle Done") { send(#selector(OutlineTextView.toggleDone(_:))) }
-          .keyboardShortcut("u", modifiers: [.command, .shift])
+        AppCommand.toggleDone.button(store)
         Divider()
-        Button("Indent") { send(#selector(OutlineTextView.indentLines(_:))) }
-          .keyboardShortcut("]", modifiers: .command)
-        Button("Outdent") { send(#selector(OutlineTextView.outdentLines(_:))) }
-          .keyboardShortcut("[", modifiers: .command)
+        AppCommand.indent.button(store)
+        AppCommand.outdent.button(store)
         Divider()
-        Button("Move Up") { send(#selector(OutlineTextView.moveLineUp(_:))) }
-          .keyboardShortcut(.upArrow, modifiers: [.control, .command])
-        Button("Move Down") { send(#selector(OutlineTextView.moveLineDown(_:))) }
-          .keyboardShortcut(.downArrow, modifiers: [.control, .command])
+        AppCommand.moveUp.button(store)
+        AppCommand.moveDown.button(store)
       }
       CommandGroup(after: .toolbar) {
-        Button("Zoom In") { store.graphView?.zoomIn() }
-          .keyboardShortcut("=", modifiers: .command)
-        Button("Zoom Out") { store.graphView?.zoomOut() }
-          .keyboardShortcut("-", modifiers: .command)
-        Button("Fit All") { store.graphView?.fitAll() }
-          .keyboardShortcut("0", modifiers: .command)
-        Button("Reshuffle") { store.reshuffle() }
-          .keyboardShortcut("r", modifiers: [.command, .shift])
-          .disabled(store.currentURL == nil)
+        AppCommand.zoomIn.button(store)
+        AppCommand.zoomOut.button(store)
+        AppCommand.fitAll.button(store)
+        AppCommand.reshuffle.button(store)
         Divider()
-        Button("Focus Editor") { store.focusEditor() }
-          .keyboardShortcut("1", modifiers: .command)
-        Button("Focus Graph") { store.focusGraph() }
-          .keyboardShortcut("2", modifiers: .command)
+        AppCommand.focusEditor.button(store)
+        AppCommand.focusGraph.button(store)
         Divider()
       }
     }

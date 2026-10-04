@@ -2,7 +2,7 @@ import CoreText
 import MindmapCore
 import QuartzCore
 
-struct NodeLook: Equatable {
+struct NodeLook: Hashable, Sendable {
   var radius: Double
   var fill: UInt32
   var stroked: Bool
@@ -40,7 +40,7 @@ final class NodeLayer: CALayer {
         x: -look.halfWidth - margin, y: -look.radius - margin, width: width, height: height)
       anchorPoint = CGPoint(x: 0.5, y: (look.radius + margin) / height)
       opacity = look.done ? 0.4 : 1
-      setNeedsDisplay()
+      contents = nil
     }
   }
 
@@ -56,13 +56,35 @@ final class NodeLayer: CALayer {
 
   required init?(coder: NSCoder) { fatalError("not used") }
 
-  override func draw(in ctx: CGContext) {
-    guard let look else { return }
-    // Draw y down regardless of how the tree above is flipped.
-    if ctx.ctm.d > 0 {
-      ctx.translateBy(x: 0, y: bounds.minY + bounds.maxY)
-      ctx.scaleBy(x: 1, y: -1)
-    }
+  func apply(_ image: CGImage, scale: Double) {
+    contentsScale = scale
+    contents = image
+  }
+}
+
+/// Core Text and bitmap work stays on a worker, never on the view's display callback.
+enum NodeRaster {
+  static func image(look: NodeLook, scale: Double) -> CGImage? {
+    let margin = 2.0
+    let rect = CGRect(
+      x: -look.halfWidth - margin, y: -look.radius - margin,
+      width: (look.halfWidth + margin) * 2,
+      height: look.radius + look.down + margin * 2)
+    let scale = max(0.1, scale)
+    guard
+      let ctx = CGContext(
+        data: nil, width: max(1, Int(ceil(rect.width * scale))),
+        height: max(1, Int(ceil(rect.height * scale))), bitsPerComponent: 8,
+        bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+    else { return nil }
+    ctx.scaleBy(x: scale, y: -scale)
+    ctx.translateBy(x: -rect.minX, y: -rect.maxY)
+    draw(look: look, in: ctx)
+    return ctx.makeImage()
+  }
+
+  private static func draw(look: NodeLook, in ctx: CGContext) {
     let r = look.radius
     let dot = CGRect(x: -r, y: -r, width: r * 2, height: r * 2)
     ctx.setFillColor(GraphStyle.color(look.fill))

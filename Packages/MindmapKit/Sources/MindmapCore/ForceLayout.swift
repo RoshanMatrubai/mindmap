@@ -120,7 +120,7 @@ public struct LayoutPoint: Codable, Sendable, Equatable {
 }
 
 /// The prototype's 16807 LCG.
-struct SeededRandom {
+struct SeededRandom: Sendable {
   var seed: Int
   init(_ seed: Int) { self.seed = (seed % 2_147_483_647 + 2_147_483_647) % 2_147_483_647 }
   mutating func next() -> Double {
@@ -131,7 +131,7 @@ struct SeededRandom {
 }
 
 /// Struct-of-arrays state so the hot loops stay in contiguous memory.
-struct Simulation {
+struct Simulation: Sendable {
   var x: [Double], y: [Double], vx: [Double], vy: [Double]
   var radius: [Double], fontSize: [Double], hw: [Double], up: [Double], dn: [Double]
   var lines: [[String]]
@@ -254,6 +254,7 @@ struct Simulation {
   private mutating func repel(_ al: Double) {
     let strength = params.repel * al
     let n = count
+    guard n > 0 else { return }
     let grid = n > 300 ? Grid(x: x, y: y, cell: 600) : nil
     var rng = random
     x.withUnsafeBufferPointer { x in
@@ -261,9 +262,14 @@ struct Simulation {
         isGroup.withUnsafeBufferPointer { g in
           vx.withUnsafeMutableBufferPointer { vx in
             vy.withUnsafeMutableBufferPointer { vy in
+              let px = x.baseAddress!
+              let py = y.baseAddress!
+              let pg = g.baseAddress!
+              let pvx = vx.baseAddress!
+              let pvy = vy.baseAddress!
               func pair(_ i: Int, _ j: Int) {
-                var dx = x[j] - x[i]
-                var dy = y[j] - y[i]
+                var dx = px[j] - px[i]
+                var dy = py[j] - py[i]
                 var d2 = dx * dx + dy * dy
                 if d2 > 360_000 { return }
                 if d2 < 1 {
@@ -271,11 +277,11 @@ struct Simulation {
                   dy = rng.next() - 0.5
                   d2 = 1
                 }
-                let f = strength * (g[i] && g[j] ? 1.4 : 1) / d2
-                vx[i] -= dx * f
-                vy[i] -= dy * f
-                vx[j] += dx * f
-                vy[j] += dy * f
+                let f = strength * (pg[i] && pg[j] ? 1.4 : 1) / d2
+                pvx[i] -= dx * f
+                pvy[i] -= dy * f
+                pvx[j] += dx * f
+                pvy[j] += dy * f
               }
               if let grid {
                 grid.forEachPair(pair)
@@ -294,25 +300,57 @@ struct Simulation {
 
   /// Label boxes push apart along the axis of least overlap. Pinned nodes stay put.
   mutating func collide(_ k: Double) {
-    for set in collisionSets {
-      for a in 0..<set.count {
-        let i = set[a]
-        for b in (a + 1)..<max(a + 1, set.count) {
-          let j = set[b]
-          if pinned[i] && pinned[j] { continue }
-          let ox = min(x[i] + hw[i], x[j] + hw[j]) - max(x[i] - hw[i], x[j] - hw[j]) + 6
-          let oy = min(y[i] + dn[i], y[j] + dn[j]) - max(y[i] - up[i], y[j] - up[j]) + 6
-          guard ox > 0, oy > 0 else { continue }
-          let wi = pinned[i] ? 0.0 : pinned[j] ? 2 : 1
-          let wj = pinned[j] ? 0.0 : pinned[i] ? 2 : 1
-          if ox < oy {
-            let s = (x[j] >= x[i] ? 1.0 : -1) * ox * k / 2
-            x[i] -= s * wi
-            x[j] += s * wj
-          } else {
-            let s = (y[j] >= y[i] ? 1.0 : -1) * oy * k / 2
-            y[i] -= s * wi
-            y[j] += s * wj
+    guard count > 0 else { return }
+    let sets = collisionSets
+    x.withUnsafeMutableBufferPointer { x in
+      y.withUnsafeMutableBufferPointer { y in
+        hw.withUnsafeBufferPointer { hw in
+          up.withUnsafeBufferPointer { up in
+            dn.withUnsafeBufferPointer { dn in
+              pinned.withUnsafeBufferPointer { pinned in
+                let px = x.baseAddress!
+                let py = y.baseAddress!
+                let phw = hw.baseAddress!
+                let pup = up.baseAddress!
+                let pdn = dn.baseAddress!
+                let ppinned = pinned.baseAddress!
+                for set in sets {
+                  set.withUnsafeBufferPointer { set in
+                    guard !set.isEmpty else { return }
+                    let pset = set.baseAddress!
+                    var a = 0
+                    while a < set.count {
+                      let i = pset[a]
+                      var b = a + 1
+                      while b < set.count {
+                        let j = pset[b]
+                        b += 1
+                        if ppinned[i] && ppinned[j] { continue }
+                        let ox =
+                          min(px[i] + phw[i], px[j] + phw[j])
+                          - max(px[i] - phw[i], px[j] - phw[j]) + 6
+                        let oy =
+                          min(py[i] + pdn[i], py[j] + pdn[j])
+                          - max(py[i] - pup[i], py[j] - pup[j]) + 6
+                        guard ox > 0, oy > 0 else { continue }
+                        let wi = ppinned[i] ? 0.0 : ppinned[j] ? 2 : 1
+                        let wj = ppinned[j] ? 0.0 : ppinned[i] ? 2 : 1
+                        if ox < oy {
+                          let shift = (px[j] >= px[i] ? 1.0 : -1) * ox * k / 2
+                          px[i] -= shift * wi
+                          px[j] += shift * wj
+                        } else {
+                          let shift = (py[j] >= py[i] ? 1.0 : -1) * oy * k / 2
+                          py[i] -= shift * wi
+                          py[j] += shift * wj
+                        }
+                      }
+                      a += 1
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -336,6 +374,9 @@ struct Grid {
   init(x: [Double], y: [Double], cell: Double) {
     let minX = x.min() ?? 0
     let minY = y.min() ?? 0
+    // Larger cells still hold every neighbor. This caps the cell count when one node is far away.
+    let area = ((x.max() ?? 0) - minX) * ((y.max() ?? 0) - minY)
+    let cell = max(cell, (area / Double(max(64, 4 * x.count))).squareRoot(), 1)
     let cx = x.map { Int(($0 - minX) / cell) }
     let cy = y.map { Int(($0 - minY) / cell) }
     let columns = (cx.max() ?? 0) + 1
@@ -353,15 +394,51 @@ struct Grid {
     }
   }
 
+  /// Calls `body(j)` for every other node in the same or adjacent cells as `i`.
+  func forEachNeighbor(of i: Int, _ body: (Int) -> Void) {
+    let column = home[i] % columns
+    let row = home[i] / columns
+    for r in max(0, row - 1)...min(rows - 1, row + 1) {
+      for c in max(0, column - 1)...min(columns - 1, column + 1) {
+        let cell = r * columns + c
+        for k in start[cell]..<start[cell + 1] where order[k] != i { body(order[k]) }
+      }
+    }
+  }
+
   /// Calls `body(i, j)` once for every pair (i < j) in the same or adjacent cells.
   func forEachPair(_ body: (Int, Int) -> Void) {
-    for i in home.indices {
-      let column = home[i] % columns
-      let row = home[i] / columns
-      for r in max(0, row - 1)...min(rows - 1, row + 1) {
-        for c in max(0, column - 1)...min(columns - 1, column + 1) {
-          let cell = r * columns + c
-          for k in start[cell]..<start[cell + 1] where order[k] > i { body(i, order[k]) }
+    guard !home.isEmpty else { return }
+    home.withUnsafeBufferPointer { home in
+      start.withUnsafeBufferPointer { start in
+        order.withUnsafeBufferPointer { order in
+          let phome = home.baseAddress!
+          let pstart = start.baseAddress!
+          let porder = order.baseAddress!
+          var i = 0
+          while i < home.count {
+            let column = phome[i] % columns
+            let row = phome[i] / columns
+            var r = max(0, row - 1)
+            let lastRow = min(rows - 1, row + 1)
+            while r <= lastRow {
+              var c = max(0, column - 1)
+              let lastColumn = min(columns - 1, column + 1)
+              while c <= lastColumn {
+                let cell = r * columns + c
+                var k = pstart[cell]
+                let end = pstart[cell + 1]
+                while k < end {
+                  let j = porder[k]
+                  if j > i { body(i, j) }
+                  k += 1
+                }
+                c += 1
+              }
+              r += 1
+            }
+            i += 1
+          }
         }
       }
     }

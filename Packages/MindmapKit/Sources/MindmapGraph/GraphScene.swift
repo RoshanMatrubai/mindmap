@@ -1,5 +1,7 @@
+import CoreText
 import MindmapCore
 import QuartzCore
+import os
 
 /// The frozen graph as a Core Animation layer tree, shared by the app and `mindmap-preview`.
 /// Pan and zoom only change `world.sublayerTransform` (plus the edge line widths), so the
@@ -16,6 +18,13 @@ public final class GraphScene {
   public private(set) var layout: GraphLayout?
   private var nodeLayers: [NodeLayer] = []
   private var reusable: [String: NodeLayer] = [:]
+  private var spareLayers: [NodeLayer] = []
+  public var rasterizesAsynchronously = false
+  public var onRasterReady: (() -> Void)?
+  private var rasterTask: Task<Void, Never>?
+  private var rasterGeneration = 0
+  private var rasterKeys: [LabelRasterKey?] = []
+  private var fontNames: [Double: String] = [:]
   public private(set) var camera = Camera()
   public var screenScale: CGFloat = 2 {
     didSet {
@@ -66,16 +75,49 @@ public final class GraphScene {
   }
 
   /// Replaces the drawn graph. Node layers whose look didn't change are kept and only moved.
-  public func show(_ layout: GraphLayout) {
+  public func show(_ layout: GraphLayout, reuseNodes: Bool = true) {
+    let stage = ContinuousClock.now
+    let perf = OSLog(
+      subsystem: Bundle.main.bundleIdentifier ?? "mindmap-preview", category: "motion")
+    os_signpost(.begin, log: perf, name: "LayerCreation")
+    defer {
+      os_signpost(.end, log: perf, name: "LayerCreation")
+      let duration = stage.duration(to: .now)
+      let ms =
+        Double(duration.components.seconds) * 1000
+        + Double(duration.components.attoseconds) / 1e15
+      Logger(subsystem: Bundle.main.bundleIdentifier ?? "mindmap-preview", category: "motion")
+        .notice("layers nodes=\(layout.nodes.count) ms=\(ms, privacy: .public)")
+    }
+    let previous = self.layout
+    let previousLayers = nodeLayers
+    let matches =
+      reuseNodes
+      ? previous.map {
+        NodeIdentity.match(old: $0.model, new: layout.model).newToOld
+      } ?? [:] : [:]
     self.layout = layout
     var next: [String: NodeLayer] = [:]
+    var used = Set<ObjectIdentifier>()
+    // Prefer identity/path matches, then reuse detached layers when maps have different names.
+    let preferred = layout.nodes.indices.map { i -> NodeLayer? in
+      matches[i].map { previousLayers[$0] } ?? reusable[layout.model.nodes[i].pathKey]
+    }
+    let reserved = Set(preferred.compactMap { $0.map(ObjectIdentifier.init) })
+    var available = spareLayers + previousLayers.filter { !reserved.contains(ObjectIdentifier($0)) }
     nodeLayers = layout.nodes.indices.map { i in
       let key = layout.model.nodes[i].pathKey
-      let layer = reusable[key] ?? NodeLayer()
+      let layer = preferred[i] ?? available.popLast() ?? NodeLayer()
+      used.insert(ObjectIdentifier(layer))
       next[key] = layer
       return layer
     }
+    spareLayers = available.filter { !used.contains(ObjectIdentifier($0)) }
+    for layer in spareLayers { layer.removeFromSuperlayer() }
     reusable = next
+    rasterKeys = Array(repeating: nil, count: nodeLayers.count)
+    rasterGeneration += 1
+    rasterTask?.cancel()
     without {
       for (i, layer) in nodeLayers.enumerated() {
         layer.look = NodeLook(node: layout.nodes[i], source: layout.model.nodes[i])
@@ -91,11 +133,23 @@ public final class GraphScene {
     }
   }
 
+  /// Publishes one simulation frame. Only positions and paths change, never label contents.
+  public func applyPositions(_ layout: GraphLayout) {
+    guard layout.nodes.count == nodeLayers.count else { return }
+    self.layout = layout
+    without {
+      for (index, node) in layout.nodes.enumerated() {
+        nodeLayers[index].position = CGPoint(x: node.x, y: node.y)
+      }
+      rebuildPaths()
+    }
+  }
+
   /// Moves one node; its tree edges and cross links follow. Nothing else moves.
   public func moveNode(_ index: Int, to point: CGPoint) {
-    guard layout != nil else { return }
-    layout!.nodes[index].x = point.x
-    layout!.nodes[index].y = point.y
+    guard let layout, layout.nodes.indices.contains(index) else { return }
+    self.layout!.nodes[index].x = point.x
+    self.layout!.nodes[index].y = point.y
     without {
       nodeLayers[index].position = point
       rebuildPaths()
@@ -196,31 +250,78 @@ public final class GraphScene {
     links.lineDashPattern = dash(c)
   }
 
-  /// Re-rasterizes labels for the current zoom. Labels on or near the screen get full resolution;
-  /// the rest stay at most at 1× so a deep zoom doesn't allocate huge bitmaps for 500 nodes.
+  public func cancelRaster() {
+    rasterGeneration += 1
+    rasterTask?.cancel()
+    rasterTask = nil
+  }
+
+  /// Rasterizes at the current zoom. Far-off labels stay at most 1x resolution.
   public func refreshRaster() {
     guard let layout else { return }
     let view = CGRect(origin: .zero, size: size)
     let near = CGRect(
       origin: camera.toWorld(CGPoint(x: -view.width / 2, y: -view.height / 2)),
       size: CGSize(width: view.width * 2 / camera.zoom, height: view.height * 2 / camera.zoom))
+    var requests: [(index: Int, key: LabelRasterKey)] = []
     for (i, layer) in nodeLayers.enumerated() {
       let n = layout.nodes[i]
       let box = CGRect(
         x: n.x - n.halfWidth, y: n.y - n.up, width: n.halfWidth * 2, height: n.up + n.down)
       let zoom = box.intersects(near) ? camera.zoom : min(camera.zoom, 1)
-      let scale = screenScale * zoom
-      if abs(layer.contentsScale - scale) > scale * 0.05 {
-        layer.contentsScale = scale
-        layer.setNeedsDisplay()
+      // Nearby scales share a raster, avoiding a bitmap per tiny zoom adjustment.
+      let scale = max(0.125, (screenScale * zoom * 8).rounded() / 8)
+      guard let look = layer.look else { continue }
+      let font =
+        fontNames[look.fontSize]
+        ?? (CTFontCopyPostScriptName(GraphStyle.font(size: look.fontSize)) as String)
+      fontNames[look.fontSize] = font
+      let key = LabelRasterKey(look: look, font: font, scale: scale)
+      if rasterKeys[i] != key || layer.contents == nil { requests.append((i, key)) }
+    }
+    guard !requests.isEmpty else {
+      onRasterReady?()
+      return
+    }
+    if !rasterizesAsynchronously {
+      without {
+        for request in requests {
+          if let image = NodeRaster.image(look: request.key.look, scale: request.key.scale) {
+            nodeLayers[request.index].apply(image, scale: request.key.scale)
+            rasterKeys[request.index] = request.key
+          }
+        }
       }
+      onRasterReady?()
+      return
+    }
+    rasterTask?.cancel()
+    rasterGeneration += 1
+    let generation = rasterGeneration
+    rasterTask = Task { [weak self] in
+      let results = await LabelRasterCache.shared.render(requests.map(\.key))
+      guard let self, !Task.isCancelled, generation == self.rasterGeneration else { return }
+      let images = Dictionary(results.map { ($0.key, $0.image) }, uniquingKeysWith: { a, _ in a })
+      self.without {
+        for request in requests {
+          guard let image = images[request.key], self.nodeLayers.indices.contains(request.index),
+            self.nodeLayers[request.index].look == request.key.look
+          else { continue }
+          self.nodeLayers[request.index].apply(image, scale: request.key.scale)
+          self.rasterKeys[request.index] = request.key
+        }
+      }
+      self.onRasterReady?()
     }
   }
 
-  /// Draws anything pending now (the preview renders without a run loop).
+  /// The preview has no run loop, so it uses the same rasterizer synchronously.
   public func displayNow() {
     title.displayIfNeeded()
-    for layer in nodeLayers { layer.displayIfNeeded() }
+    let async = rasterizesAsynchronously
+    rasterizesAsynchronously = false
+    refreshRaster()
+    rasterizesAsynchronously = async
   }
 
   /// Nearest node within `radius` view points of `point`.

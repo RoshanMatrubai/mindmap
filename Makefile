@@ -1,12 +1,18 @@
 # All build output stays in build/ (gitignored). Requires Xcode (see README).
 
 CONFIG ?= Debug
+# Standalone builds work without keychain access. The dev launch retains Local.xcconfig signing.
+SIGNING ?= adhoc
+SIGNING_FLAGS := $(if $(filter adhoc,$(SIGNING)),CODE_SIGN_IDENTITY=-,)
 PKG := Packages/MindmapKit
-SWIFTPM := --package-path $(PKG) --scratch-path build/swiftpm --disable-sandbox
+CACHE_ROOT := $(CURDIR)/build/caches
+export CLANG_MODULE_CACHE_PATH := $(CACHE_ROOT)/clang
+export SWIFTPM_MODULECACHE_OVERRIDE := $(CACHE_ROOT)/swift-modules
+SWIFTPM := --package-path $(PKG) --scratch-path build/swiftpm --cache-path $(CACHE_ROOT)/swiftpm --config-path $(CACHE_ROOT)/swiftpm-config --security-path $(CACHE_ROOT)/swiftpm-security --manifest-cache local --disable-sandbox
 # Keep nested sandboxes disabled so builds also work inside an agent sandbox
 # (Codex workspace-write mode or the Claude Code sandbox).
 # The manifest-sandbox flags mirror --disable-sandbox for package manifests.
-XCODEBUILD := xcodebuild -project mindmap.xcodeproj -scheme mindmap -destination 'platform=macOS' -derivedDataPath build/DerivedData -IDEPackageSupportDisableManifestSandbox=YES
+XCODEBUILD := xcodebuild -project mindmap.xcodeproj -scheme mindmap -destination 'platform=macOS' -derivedDataPath build/DerivedData -IDEPackageSupportDisableManifestSandbox=YES -packageCachePath $(CACHE_ROOT)/xcode-packages -IDEPackageCacheDirPath=$(CACHE_ROOT)/xcode-packages -IDEDisablePackageManifestCaching=YES CLANG_MODULE_CACHE_PATH=$(CLANG_MODULE_CACHE_PATH) $(SIGNING_FLAGS)
 PRODUCTS := build/DerivedData/Build/Products
 SOURCES := App $(PKG) scripts
 DEV_NAME := mindmap dev
@@ -20,7 +26,7 @@ build:
 # Debug build = "mindmap dev", bundle ID ...mindmap.dev, its own sandbox container.
 # ARGS go to the app, e.g. make run ARGS="-fixture sample".
 run: stop
-	$(MAKE) build CONFIG=Debug
+	$(MAKE) build CONFIG=Debug SIGNING=configured
 	open "$(DEV_APP)" --args $(ARGS)
 
 stop:
@@ -37,7 +43,7 @@ logs:
 	log show --last 2m --style compact --predicate 'subsystem == "io.github.roshanmatrubai.mindmap.dev"'
 
 install:
-	$(MAKE) build CONFIG=Release
+	$(MAKE) build CONFIG=Release SIGNING=configured
 	rm -rf /Applications/mindmap.app
 	ditto "$(PRODUCTS)/Release/mindmap.app" /Applications/mindmap.app
 	@echo "installed /Applications/mindmap.app"

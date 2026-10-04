@@ -6,7 +6,10 @@ struct GraphPane: NSViewRepresentable {
 
   func makeNSView(context: Context) -> GraphView {
     let view = GraphView(frame: NSRect(x: 0, y: 0, width: 600, height: 600))
-    view.onPin = { key, point in store.pin(key, at: point) }
+    view.onPin = { document, key, point in store.pin(document: document, key, at: point) }
+    view.onFreeze = { document, layout, pins in
+      store.graphFrozen(document: document, layout, pins: pins)
+    }
     store.graphView = view
     return view
   }
@@ -18,12 +21,15 @@ struct GraphPane: NSViewRepresentable {
       return
     }
     context.coordinator.generation = graph.generation
+    view.onFirstFrame = { _ in store.graphShown(document: graph.documentID) }
     let title = graph.layout.model.title
     view.show(
-      graph.layout, title: (title.isEmpty ? "untitled map" : title).lowercased(), refit: graph.refit
+      graph.simulation, title: (title.isEmpty ? "untitled map" : title).lowercased(),
+      refit: graph.refit, reuseNodes: graph.reuseNodes, document: graph.documentID
     )
     #if DEBUG
       DebugLaunch.zoomOnce(view)
+      DebugLaunch.reshuffleOnce(store)
     #endif
   }
 

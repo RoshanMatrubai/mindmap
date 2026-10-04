@@ -6,7 +6,7 @@
 2. `git clone https://github.com/RoshanMatrubai/mindmap.git && cd mindmap`
 3. `make test`
 
-Builds are ad-hoc signed, so no Apple account is needed. To sign with your free Personal Team instead, copy `Config/Local.xcconfig.example` to `Config/Local.xcconfig` (gitignored) and fill in `DEVELOPMENT_TEAM`. It's optional: data protection doesn't depend on it.
+Standalone builds use ad-hoc signing, so no Apple account or sandbox keychain access is needed. To sign with your free Personal Team, copy `Config/Local.xcconfig.example` to `Config/Local.xcconfig` (gitignored), fill in `DEVELOPMENT_TEAM` and use `make build SIGNING=configured`. `make run` honors that configured signing to preserve the existing dev container's identity. Team signing is optional; data protection does not depend on it.
 
 ## Commands
 
@@ -22,7 +22,7 @@ Builds are ad-hoc signed, so no Apple account is needed. To sign with your free 
 | `make check-isolation` | Checks that your terminal can't read `~/Documents` (or `FOLDER=<path>`) and has no Full Disk Access. For you, not for agents |
 | `make clean` | Deletes `build/` |
 
-Everything builds into `build/`. Use `make run` while developing; the dev copy keeps its maps inside its own container and never asks for your maps folder unless you launch it with `ARGS="-use-folder-picker YES"`.
+Everything builds into `build/`, including the clang module cache and SwiftPM cache, configuration and security directories. `make build` and `make test` work inside Codex's workspace-write sandbox. Use `make run` while developing; the dev copy keeps its maps inside its own container and never asks for your maps folder unless you launch it with `ARGS="-use-folder-picker YES"`.
 
 ## Before a pull request
 
@@ -54,4 +54,4 @@ Run `make check-isolation` yourself to confirm: it prints PROTECTED or EXPOSED a
 
 **Claude Code.** Start it from the repo root. `.claude/settings.json` denies reading the release container, its Application Scripts folder, `~/Library/Calendars`, Documents, Desktop, Downloads and iCloud Drive, for Claude's file tools and (best effort, by matching the command text) shell commands. The Bash sandbox is off so agents can run, screenshot and debug the dev app. Don't approve commands that read those folders.
 
-**Codex.** Run with `codex --sandbox danger-full-access --ask-for-approval never`. The guard for real maps is macOS Files & Folders protection on Documents: answer **Don't Allow** if macOS asks for access, and never give the terminal Full Disk Access. Contributors who prefer Codex's sandbox can use `codex --sandbox workspace-write`; builds still work there. That sandbox limits writes to the repo, but the Files & Folders protection above is what keeps your maps away from terminal programs.
+**Codex.** Use `codex --sandbox workspace-write` for builds and tests. The debug loop (`make run`, `make logs`, `make stop`, `make screenshot`) still requires execution outside that sandbox through automatic approval review or full access, because macOS blocks those operations inside it. A denied review must be reported, with no workaround. The guard for real maps is macOS Files & Folders protection: answer **Don't Allow** if macOS asks for access, and never give the terminal Full Disk Access.

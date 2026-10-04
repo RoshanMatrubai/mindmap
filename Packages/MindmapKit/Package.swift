@@ -14,5 +14,6 @@ let package = Package(
     .target(name: "MindmapGraph", dependencies: ["MindmapCore"]),
     .executableTarget(name: "mindmap-preview", dependencies: ["MindmapCore", "MindmapGraph"]),
     .testTarget(name: "MindmapCoreTests", dependencies: ["MindmapCore"]),
+    .testTarget(name: "MindmapGraphTests", dependencies: ["MindmapCore", "MindmapGraph"]),
   ]
 )

@@ -17,7 +17,9 @@ final class AppLifecycle: NSObject, NSApplicationDelegate {
   }
 
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-    guard let store = Self.store, store.hasUnsavedEdits || store.hasUnsavedLayout else {
+    guard let store = Self.store,
+      store.currentURL != nil || store.hasUnsavedEdits || store.hasUnsavedLayout
+    else {
       return .terminateNow
     }
     Task { sender.reply(toApplicationShouldTerminate: await store.finishSaving()) }
