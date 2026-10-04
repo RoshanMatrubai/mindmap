@@ -12,6 +12,8 @@ struct GraphUpdate {
   let reuseNodes: Bool
   let generation: Int
   let documentID: UUID
+  /// The label font the simulation measured with.
+  let family: String
 }
 
 @MainActor @Observable
@@ -33,6 +35,27 @@ final class MapStore {
   private(set) var detail: NodeDetail?
   /// The graph view is first responder, so Return, Tab, Delete, Esc and arrows act on the graph.
   var graphFocused = false
+  /// App-wide settings, edited live by the forces panel and the Settings window.
+  var preferences = Preferences(defaults: .standard) {
+    didSet { preferencesChanged(from: oldValue) }
+  }
+  /// The forces panel's status: the settle's alpha in percent while the graph moves, else nil.
+  private(set) var settlePercent: Int?
+  /// A brief message in the detail panel, such as a refused graph edit.
+  private(set) var notice: String?
+  /// Every bundled font is registered, so the picker can preview each one.
+  private(set) var allFontsRegistered = false
+  /// Opens the Settings window (set by the main window, which has the environment action).
+  @ObservationIgnored var openSettings: (() -> Void)?
+  @ObservationIgnored private var reshuffleTask: Task<Void, Never>?
+  @ObservationIgnored private var noticeTask: Task<Void, Never>?
+  @ObservationIgnored private var resizeNext = false
+  /// The label font's registration. Layouts wait for it before measuring labels.
+  @ObservationIgnored private var labelFontReady: Task<Void, Never>?
+  #if DEBUG
+    /// Reshuffles started, by any route (⇧⌘R, buttons, force changes).
+    @ObservationIgnored private(set) var debugReshuffles = 0
+  #endif
   @ObservationIgnored weak var graphView: GraphView?
   @ObservationIgnored weak var editorView: NSTextView?
   @ObservationIgnored private var layoutState = LayoutSidecar(seed: LayoutSidecar.randomSeed())
@@ -68,6 +91,7 @@ final class MapStore {
   var hasUnsavedEdits: Bool { text != savedText }
 
   init() {
+    registerLabelFont()
     #if DEBUG
       if let url = DebugLaunch.containerMapsFolder {
         Task {
@@ -105,13 +129,21 @@ final class MapStore {
     let fresh = freshNext || (!hasPrevious && !restore)
     let refit = refitNext || !hasPrevious
     let placement = pendingPlacement
+    let resize = resizeNext && hasPrevious && !restore && !fresh
+    let params = preferences.forces
+    let family = preferences.labelFont
+    let measure = GraphStyle.measure(family: family)
+    let animate = preferences.animateSettle
+    resizeNext = false
     restoreNext = false
     freshNext = false
     refitNext = false
+    let fontReady = labelFontReady
     parseTask = Task {
       if debounce {
         do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
       }
+      await fontReady?.value
       var previousSimulation: LayoutSimulation?
       if !fresh && !restore {
         // The view may not have shown this map's latest graph yet. Never match against another map.
@@ -134,11 +166,15 @@ final class MapStore {
         let parseMS = Self.milliseconds(parseStart.duration(to: .now))
         let layoutStart = ContinuousClock.now
         os_signpost(.begin, log: performance, name: "LayoutPreparation")
-        let simulation: LayoutSimulation
+        var simulation: LayoutSimulation
         if restore {
           simulation = LayoutSimulation(
-            model: model, sidecar: state, today: today, calendar: calendar,
-            measure: GraphStyle.measure)
+            model: model, sidecar: state, params: params, today: today, calendar: calendar,
+            measure: measure)
+        } else if let previous, resize, previous.model == model {
+          simulation = LayoutSimulation(
+            resizing: previous, pins: pins, params: params, today: today, calendar: calendar,
+            measure: measure)
         } else if let previous {
           let placed = placement.flatMap { p in
             model.nodes.first { $0.sourceRange.location == p.location && $0.sourceRange.length > 0 }
@@ -146,12 +182,14 @@ final class MapStore {
           }
           simulation = LayoutSimulation(
             previous: previous, model: model, pins: pins, placements: placed ?? [:],
-            today: today, calendar: calendar, measure: GraphStyle.measure)
+            params: params, today: today, calendar: calendar, measure: measure)
         } else {
           simulation = LayoutSimulation(
-            model: model, seed: state.seed, pins: state.pins, today: today,
-            calendar: calendar, measure: GraphStyle.measure)
+            model: model, seed: state.seed, pins: state.pins, params: params, today: today,
+            calendar: calendar, measure: measure)
         }
+        // Animate settle off: compute the motion here and show only the frozen result.
+        while !animate && !simulation.isFrozen { simulation.advance(by: 1) }
         os_signpost(.end, log: performance, name: "LayoutPreparation")
         let layoutMS = Self.milliseconds(layoutStart.duration(to: .now))
         log.notice(
@@ -167,7 +205,7 @@ final class MapStore {
       graph = GraphUpdate(
         layout: simulation.layout, simulation: simulation, refit: refit,
         reuseNodes: !restore && !fresh, generation: (graph?.generation ?? 0) + 1,
-        documentID: identity)
+        documentID: identity, family: family)
     }
   }
 
@@ -195,9 +233,13 @@ final class MapStore {
     hasUnsavedLayout = true
   }
 
-  /// ⇧⌘R: a new seed, no pins, a fresh layout fitted to the window.
-  func reshuffle() {
-    layoutState = LayoutSidecar(seed: LayoutSidecar.randomSeed())
+  /// ⇧⌘R: a new seed, no pins, a fresh layout fitted to the window. A force change keeps pins.
+  func reshuffle(keepingPins: Bool = false) {
+    #if DEBUG
+      debugReshuffles += 1
+    #endif
+    layoutState = LayoutSidecar(
+      seed: LayoutSidecar.randomSeed(), pins: keepingPins ? layoutState.pins : [:])
     refitNext = true
     freshNext = true
     restoreNext = false
@@ -227,6 +269,51 @@ final class MapStore {
     do { try await repository.saveLayout(layoutState, document: documentID) } catch {
       hasUnsavedLayout = true
       report("save layout", error)
+    }
+  }
+
+  // MARK: Preferences
+
+  private func preferencesChanged(from old: Preferences) {
+    guard preferences != old else { return }
+    preferences.save(to: .standard)
+    if preferences.labelFont != old.labelFont { registerLabelFont() }
+    if preferences.forcesDiffer(from: old) {
+      // About 200 ms after the slider stops: a new seed, keeping pins (decision 3).
+      reshuffleTask?.cancel()
+      reshuffleTask = Task {
+        do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+        reshuffle(keepingPins: true)
+      }
+    } else if preferences.labelSize != old.labelSize || preferences.labelFont != old.labelFont {
+      // New label boxes, same positions; only new overlaps are pushed apart. No reshuffle.
+      resizeNext = true
+      scheduleParse(debounce: false)
+    }
+  }
+
+  /// Registers only the selected label font (the picker registers the rest), off the main
+  /// thread: registering on it during launch delayed the first window by about 60 ms.
+  private func registerLabelFont() {
+    let family = preferences.labelFont
+    labelFontReady = Task.detached(priority: .userInitiated) { GraphFonts.register(family) }
+  }
+
+  func settleChanged(_ alpha: Double?) {
+    let percent = alpha.map { Int(($0 * 100).rounded()) }
+    if percent != settlePercent { settlePercent = percent }
+  }
+
+  /// The picker previews every family; registering them all at launch costs about 70 ms.
+  func registerAllFonts() {
+    guard !allFontsRegistered else { return }
+    let started = ContinuousClock.now
+    Task {
+      await Task.detached(priority: .userInitiated) { GraphFonts.registerAll() }.value
+      allFontsRegistered = true
+      log.notice(
+        "fonts registered all ms=\(Self.milliseconds(started.duration(to: .now)), privacy: .public)"
+      )
     }
   }
 
@@ -295,8 +382,7 @@ final class MapStore {
   @discardableResult
   func applyGraphEdit(_ edit: GraphEdit) -> Bool {
     guard graphIsCurrent, let outline, outline.isEditable, outline.string == text else {
-      log.notice("graph edit skipped: graph not current")
-      return false
+      return refuse(edit)
     }
     let nodes = model.nodes
     var placement: LayoutPoint?
@@ -333,25 +419,44 @@ final class MapStore {
     outline.quietly { applied = outline.perform(change) }
     guard applied else {
       pendingPlacement = nil
-      return false
+      return refuse(edit)
     }
     outline.selectLine(change.selection)
     scheduleParse(debounce: false)
     return true
   }
 
-  /// The selected node, when the graph shows the current text.
-  private var editableSelection: Int? { graphIsCurrent ? graphView?.selection : nil }
+  /// The editor and the store (or the graph's parse) disagree, say mid-typing. Nothing changes;
+  /// the detail panel says so for a few seconds instead of failing silently.
+  private func refuse(_ edit: GraphEdit) -> Bool {
+    log.notice(
+      "graph edit refused: \(String(describing: edit), privacy: .public) current=\(self.graphIsCurrent) editor-matches=\(self.outline?.string == self.text)"
+    )
+    notice = "couldn't apply that edit, try again"
+    noticeTask?.cancel()
+    noticeTask = Task {
+      try? await Task.sleep(for: .seconds(3))
+      if !Task.isCancelled { notice = nil }
+    }
+    return false
+  }
 
+  /// ⌘1–4 and ⌘0: the selected node with the graph focused, else the editor's bullet lines.
   func setPriority(_ priority: MapPriority?) {
-    if let i = editableSelection { applyGraphEdit(.priority(i, priority)) }
+    if graphFocused {
+      if let i = graphView?.selection { applyGraphEdit(.priority(i, priority)) }
+    } else if let outline, outline.window?.firstResponder === outline {
+      outline.perform(
+        OutlineEditing.setPriority(
+          text: outline.string, selection: outline.selectedRange(), priority))
+    }
   }
 
   func toggleDone(_ index: Int) { applyGraphEdit(.toggleDone(index)) }
 
   /// ⇧⌘X with the graph focused toggles the selected task; otherwise the editor's lines.
   func toggleDoneFromMenu() {
-    if graphFocused, let i = editableSelection {
+    if graphFocused, let i = graphView?.selection {
       applyGraphEdit(.toggleDone(i))
     } else {
       NSApp.sendAction(#selector(OutlineTextView.toggleDone(_:)), to: nil, from: nil)
@@ -625,6 +730,9 @@ final class MapStore {
   }
 
   func graphShown(document: UUID) {
+    #if DEBUG
+      DebugLaunch.logLaunch("first-graph-frame")
+    #endif
     guard switchPending, switchDocumentID == document, documentID == document else { return }
     switchPending = false
     os_signpost(.end, log: performance, name: "MapSwitch")

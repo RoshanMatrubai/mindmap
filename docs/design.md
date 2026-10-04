@@ -48,7 +48,7 @@ This is the heart of the look: a d3-force style simulation, animated when needed
 
 Each tick, with `alpha` decaying from 1 toward 0 by 2% per tick:
 
-1. **Repel.** Every pair pushes apart with force `repel × alpha / distance²`, ignored beyond 250 units. Group pairs get 1.4× weight. Use Barnes-Hut or a uniform grid once nodes exceed about 300; the prototype is O(n²).
+1. **Repel.** Every pair pushes apart with force `repel × alpha / distance²`, ignored beyond 250 units. **User decision:** 250 is intentional and overrides the original brief's 600; don't revert it. Group pairs get 1.4× weight. Use Barnes-Hut or a uniform grid once nodes exceed about 300; the prototype is O(n²).
 2. **Springs.** Each parent and child pair pulls toward `link distance`, scaled by `link force`. As in the prototype's code, a group→task spring (prototype depth 2, our depth 1) is 1.5× that and every deeper level 1×. Cross links are springs at 12% strength and 3× distance.
 3. **Center gravity.** Pulls every node toward the origin with strength `center`.
 4. **Urgency force.** Each node gets an urgency score from 0 to 1: due-date closeness `(8 − daysUntilDue) / 8`, plus 0.5 for high or 0.25 for medium priority, capped at 1. Parents inherit 85% of their most urgent child.
@@ -94,7 +94,7 @@ Step 3a (motion):
 
 Node identity matches the path key first, then a rename at the same sibling position under the same parent, then an unmatched node with the same name nearest in document order. Unmatched nodes are additions or deletions.
 
-Local relaxation runs springs and repulsion for new, moved and dragged nodes, and collisions for the whole affected free set, against fixed neighbors. A free node's overlapping neighbors join that set and can push further neighbors; nodes that join this way only collide, so they move aside rather than away. Overlaps that already existed between two nodes the change didn't move are tolerated at their starting depth (close pairs may use up the margin) but never made worse, so one change doesn't ripple through the settle's intentional cross-group clutter. Fixed nodes never move. A held drag cools and only pointer motion reheats it. Local settling freezes when nothing moves, or at most 5 s after a release or edit. Neighbor searches use a uniform grid.
+Local relaxation runs springs and repulsion for new, moved and dragged nodes, and collisions for the whole affected free set, against fixed neighbors. A free node's overlapping neighbors join that set and can push further neighbors; nodes that join this way only collide, so they move aside rather than away. Overlaps that already existed between two nodes the change didn't move are tolerated at their starting depth (close pairs may use up the margin) but never made worse, so one change doesn't ripple through the settle's intentional cross-group clutter. Drags are bounded further, see "User decisions after the step 4 review". Fixed nodes never move. A held drag cools and only pointer motion reheats it. Local settling freezes when nothing moves, or at most 5 s after a release or edit. Neighbor searches use a uniform grid.
 
 An NSView display link exists only while the graph is moving or a drag is active, and stops as soon as the graph freezes. Simulation ticks run off the main thread at a fixed 120 ticks per second, independent of display refresh rate. The main thread applies layer positions once per display frame with implicit Core Animation actions disabled. Occluded windows pause the simulation. Worker frames, snapshots and freeze or pin callbacks carry the document they belong to; after a map switch, results for the previous map are dropped. Labels rasterize off the main thread and cache by text, font, size, scale and style; unchanged node layers are reused.
 
@@ -108,7 +108,7 @@ Step 3b (built): selection and highlighting, camera fit to a selection, editor�
 | 4 | Rename on the graph | Double-click a node or its label to edit the name inline: Return saves, Esc cancels, clicking elsewhere saves. Metadata (done marker, due date, priority, links) is kept and follows the name. Double-click empty canvas adds a group at that spot |
 | 5 | New node being named | A new node is written to the text only when its name is committed, so Esc (or an empty name) leaves the text untouched. Its dot shows while naming |
 | 6 | Done checkbox | In the detail panel for leaf tasks; toggles `[x]` in the text |
-| 7 | Priority shortcuts | With a node selected: ⌥⌘1 high, ⌥⌘2 medium, ⌥⌘3 low, ⌥⌘4 chill, ⌥⌘0 clear. Writes, replaces or removes the `/tag` |
+| 7 | Priority shortcuts | With a node selected: ⌥⌘1 high, ⌥⌘2 medium, ⌥⌘3 low, ⌥⌘4 chill, ⌥⌘0 clear. Writes, replaces or removes the `/tag`. **Superseded by step 4 decision 10** (⌘1–4, ⌘0) |
 | 8 | "Linked to" | Clicking a linked name in the detail panel selects that node, with a camera move |
 | 9 | Map switch | Clears the selection |
 
@@ -124,29 +124,63 @@ Other step 3b rules:
 
 ## Settings
 
-These appear in two places, a floating forces panel inside the graph pane (toggled from the toolbar, styled like the prototype's) and the standard Settings window (⌘,). Both edit the same values, and every value persists in app data outside the repo.
+These appear in two places, a floating forces panel inside the graph pane (toggled from the toolbar and ⌥⌘F, styled like the prototype's) and the standard Settings window (⌘,). Both edit the same values live, in both directions. Every value is app-wide and persists in the container's UserDefaults, one key each, so a launch argument such as `-labelFont Quicksand` overrides it. Nothing in them is sensitive. The layout seed and pins stay per map, in the sidecar.
 
 | Setting | Range, default | On change |
 |---|---|---|
-| Text size | 0.6× to 2×, 1× | Resize labels, re-run collision, reheat to 0.25. Does not reshuffle |
+| Label size | 0.6× to 2×, 1× (⌥⌘= / ⌥⌘- step 0.05) | Re-rasterize labels with the new boxes, then push apart only overlaps deeper than they were at the old size (the local collision, animated). No reshuffle |
 | Center | 0 to 0.12, 0.04 | Auto reshuffle |
 | Repel | 50 to 2000, 450 | Auto reshuffle |
 | Link force | 0.05 to 1.5, 0.6 | Auto reshuffle |
 | Link distance | 20 to 200, 70 | Auto reshuffle |
 | Urgency | Segmented: pull in / off / push out, pull in | Auto reshuffle |
-| Animate settle | On / off, on | Off means compute the layout instantly and show the frozen result |
-| Reshuffle | Button | New seed, fresh build |
-| Font | Picker (below) | Re-measure labels, re-run collision |
-| Show forces panel | On / off | |
-| Calendar sync | On / off, off. Further options decided with the user (see [calendar.md](calendar.md)) | Requests calendar access the first time it is turned on |
+| Animate settle | On / off, on | Off means compute the layout (and local motion after edits) instantly and show the frozen result |
+| Reshuffle | Button | Same as ⇧⌘R: new seed, fresh build, pins cleared |
+| Font | Picker (below) | Re-measure labels, then the same local push-apart as label size |
+| Editor size | 11 to 18 pt, 13 | The editor's SF Mono size (Settings window only) |
+| Show forces panel | On / off, off | |
+| Calendar sync | On / off, off. Further options decided with the user (see [calendar.md](calendar.md)) | Requests calendar access the first time it is turned on (step 5) |
 
-"Auto reshuffle" means a fresh build with a new seed about 200 ms after the slider stops moving, so dragging doesn't restart the simulation every frame.
+"Auto reshuffle" means a fresh build with a new seed about 200 ms after the slider stops moving, so dragging doesn't restart the simulation every frame. It keeps pinned nodes; only ⇧⌘R (and the reshuffle buttons) clear pins.
 
 The forces panel layout to match is the prototype's `#forces` panel. (The brief referenced a `forces-panel.png` screenshot; it is not in the repo.)
 
+## Decisions for settings (step 4)
+
+| # | Topic | Decision |
+|---|---|---|
+| 1 | Forces panel | Floating in the graph pane, top left (40 from the top, 14 from the left), prototype styling. Hidden at first launch; a toolbar button and ⌥⌘F show and hide it; visibility persists |
+| 2 | Scope | Settings are app-wide (UserDefaults in the container). Layout seed and pins stay per map in the sidecar |
+| 3 | Force sliders | Auto reshuffle about 200 ms after the slider stops moving (never per frame), with a new seed, keeping pinned nodes. Only ⇧⌘R clears pins |
+| 4 | Font picker | Changes graph labels (and the map title) only. The editor stays SF Mono |
+| 5 | Editor text size | 11 to 18 pt, default 13, Settings window only |
+| 6 | Label size keys | ⌥⌘= bigger, ⌥⌘- smaller (steps of 0.05 within 0.6 to 2×); ⌘= and ⌘- stay camera zoom |
+| 7 | Settings window | Tabs: "Graph" (center, repel, link force, link distance, urgency, animate settle, reshuffle button) and "Text" (font picker, label size, editor size). Calendar comes in step 5 |
+| 8 | Fonts | Every family on the list below is bundled (all 48 verified OFL) |
+| 9 | Calendar toggle | Not in step 4 |
+| 10 | Priority keys | ⌘1 high, ⌘2 medium, ⌘3 low, ⌘4 chill, ⌘0 clear. With the graph focused they apply to the selected node; otherwise to the editor's current or selected bullet lines. They replace ⌥⌘1–4 / ⌥⌘0 |
+| 11 | Moved shortcuts | Focus editor / graph: ⌘1 / ⌘2 → ⌥⌘1 / ⌥⌘2. Fit all: ⌘0 → ⌥⌘0 |
+| 12 | Link syntax | `[name]` (single brackets) is a cross link anywhere in a line; `[[name]]` keeps working. `[ ]`, `[x]`, `[X]` right after the bullet stay the done marker. Empty `[]` is ignored. Brackets in ordinary text become links (unresolved if nothing matches); accepted. See [syntax.md](syntax.md) |
+
+User decisions after the step 4 review (they override the step 3a motion rules where they differ):
+
+| Topic | Decision |
+|---|---|
+| Repel cutoff | 250 units, set by the user, overriding the brief's 600. It packs the full settle tighter, which made crowded drags cascade across the whole map; the next two rows fix that instead of the cutoff |
+| Drag cascade | Bounded. A node joins a drag's moving set only within 3 × link distance of the dragged node, or at most 2 overlaps from the dragged subtree (`CascadeLimit`). Nodes outside that region never move, even if a region node ends up overlapping them more deeply than before (the 3a "never worse" rule is relaxed for them). Moving the pointer is what heats the region; while it is held still the cascade cools, so a jammed crowd doesn't creep |
+| Inside the region | The user chose to keep pushed nodes close rather than push them far: inside the region labels may end up somewhat closer than they started (a full crowd has nowhere else to go), at most about two task label lines deeper. In the 500-node crowded-drag test 135 nodes move (average 19 units, at most 94) |
+| Local margin | Local motion (edits, drags, label size and font changes) keeps 2 units between label boxes instead of the full settle's 6, so a settled map has room and pushes stay short |
+
+Other step 4 rules:
+
+- Panel, top to bottom: label size; "forces (auto reshuffle)" with the live "settling N%" / "frozen" status; center, repel, link force, link distance; the urgency segmented control; reshuffle and "animate: on/off" buttons; a compact font popup. The status updates only from simulation frames, so it costs nothing while frozen.
+- A graph edit refused because the editor and the store disagree is logged and shows "couldn't apply that edit, try again" in the detail panel for 3 seconds.
+
 ## Fonts
 
-All of these are OFL licensed except the system fonts, so they can ship inside the app bundle with their license files. Prefer variable font files to keep the bundle small (roughly 10 to 15 MB total). Register them with `ATSApplicationFontsPath` in Info.plist. The picker previews each name in its own font, grouped as below. Default: Nunito Sans.
+All of these are OFL licensed except the system fonts, so they ship inside the app bundle with their license files: one upright file per family from [google/fonts](https://github.com/google/fonts) (`ofl/<family>`), the variable font where there is one, else Regular, in `App/Fonts/<Family>/` with `<Family>-OFL.txt`. Together about 17 MB. The Settings window's Text tab previews each name in its own font, grouped as below; the forces panel has a compact popup. Default: Nunito Sans.
+
+Registration is lazy: launch registers only the selected family, off the main thread, and the layout waits for it; opening the Settings window's Text tab registers the rest in the background (about 160 ms). Registering all 48 with `ATSApplicationFontsPath` delayed the first window by about 70 ms, and registering even one font on the main thread at launch cost about 60 ms. The M PLUS Rounded 1c file names its family "Rounded Mplus 1c" (`GraphFonts.fontFamily`), and google/fonts has no license file for it, so its `OFL.txt` is the standard OFL 1.1 text with the copyright line from its METADATA.pb.
 
 | Group | Fonts |
 |---|---|

@@ -64,6 +64,9 @@ public final class GraphView: NSView, NSTextFieldDelegate {
   /// result that arrives after a map switch is dropped.
   public private(set) var document: UUID?
   public var onFirstFrame: ((Int) -> Void)?
+  /// The simulation's alpha on each applied frame while it moves; nil once frozen. Feeds the
+  /// forces panel's "settling N%" status, so it costs nothing while idle.
+  public var onSettle: ((Double?) -> Void)?
   public private(set) var displayedSimulation: LayoutSimulation?
   public var isAnimating: Bool { motionLink != nil }
   public var affectedIndices: Set<Int> { displayedSimulation?.affected ?? [] }
@@ -193,6 +196,7 @@ public final class GraphView: NSView, NSTextFieldDelegate {
     if simulation.isFrozen {
       reportFreeze(simulation)
     } else {
+      onSettle?(simulation.layout.alpha)
       resumeMotion()
     }
   }
@@ -331,6 +335,8 @@ public final class GraphView: NSView, NSTextFieldDelegate {
     if snapshot.isFrozen && dragUpdate?.active != true {
       pauseMotion()
       reportFreeze(snapshot)
+    } else {
+      onSettle?(layout.alpha)
     }
     return true
   }
@@ -338,6 +344,7 @@ public final class GraphView: NSView, NSTextFieldDelegate {
   private func reportFreeze(_ simulation: LayoutSimulation) {
     guard !freezeReported else { return }
     freezeReported = true
+    onSettle?(nil)
     if following && simulation.isFullLayout { scene.setCamera(fitCamera) }
     scene.refreshRaster()
     let average = frameCount == 0 ? 0 : frameTotal / Double(frameCount)
@@ -634,7 +641,7 @@ public final class GraphView: NSView, NSTextFieldDelegate {
   ) {
     naming = target
     let size = max(11, min(28, fontSize * scene.camera.zoom))
-    let font = GraphStyle.font(size: size) as NSFont
+    let font = GraphStyle.font(family: scene.labelFamily, size: size) as NSFont
     field.font = font
     field.stringValue = text
     let width = max(160, (text as NSString).size(withAttributes: [.font: font]).width + 40)

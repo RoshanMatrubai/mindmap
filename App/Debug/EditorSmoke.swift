@@ -72,7 +72,7 @@
       editor.allowsUndo = true
       editor.isRichText = false
       window.contentView = editor
-      let original = "Native test\nGroup\n- [x] Done /high\n\t- Child\n- Missing [[absent]]"
+      let original = "Native test\nGroup\n- [x] Done /high\n\t- Child\n- Missing [absent] [[gone]]"
       editor.load(original, map: UUID())
       check(editor.textLayoutManager != nil, "TextKit 2 remains enabled")
       let ns = original as NSString
@@ -99,16 +99,22 @@
       check(editor.string == original, "Shift Tab at root leaves text unchanged")
       let model = MapParser.parse(text: original, today: Date(), calendar: .current)
       editor.applyUnresolved(model.unresolvedLinks.map(\.sourceRange))
-      let link = ns.range(of: "[[absent]]")
-      let underline =
-        editor.textStorage?.attribute(
-          .underlineStyle, at: link.location, effectiveRange: nil) as? Int
+      let link = ns.range(of: "[absent]")
+      for (token, name) in [(link, "[name]"), (ns.range(of: "[[gone]]"), "[[name]]")] {
+        let underline =
+          editor.textStorage?.attribute(
+            .underlineStyle, at: token.location, effectiveRange: nil) as? Int
+        check(
+          underline == NSUnderlineStyle.single.rawValue | NSUnderlineStyle.patternDot.rawValue,
+          "unresolved \(name) links have dotted underline")
+      }
+      let marker = ns.range(of: "[x]")
       check(
-        underline == NSUnderlineStyle.single.rawValue | NSUnderlineStyle.patternDot.rawValue,
-        "unresolved links have dotted underline")
+        editor.textStorage?.attribute(.underlineStyle, at: marker.location, effectiveRange: nil)
+          == nil, "the done marker is not a link")
       editor.setSelectedRange(NSRange(location: link.location, length: 0))
       editor.insertText("😀 ", replacementRange: editor.selectedRange())
-      check(editor.string.contains("😀 [[absent]]"), "Unicode typing is preserved")
+      check(editor.string.contains("😀 [absent]"), "Unicode typing is preserved")
       check(editor.textLayoutManager != nil, "styling retains TextKit 2")
     }
 
@@ -128,6 +134,10 @@
         let view = store.graphView, let window = view.window
       else { return }
       let originalText = store.text
+      // Defaults for the run (an aborted run may have left the panel open over the graph).
+      let savedPreferences = store.preferences
+      store.preferences = Preferences()
+      defer { store.preferences = savedPreferences }
       var created: URL?
       do {
         NSApp.activate()
@@ -151,6 +161,7 @@
             })
         else { return }
         let title = "Smoke " + UUID().uuidString
+        await wait("editor editable after New Map") { editor.isEditable }
         replace(editor, with: title + "\nGroup\n- Parent\n\t- Child\n- Second\nOther\n- Distant\n")
         guard await frozen(store) else { return }
         created = store.currentURL
@@ -165,6 +176,8 @@
         created = store.currentURL
         // After the sidecar checks: deleting and undoing a node re-adds it unpinned, like typing.
         await selectionChecks(store, editor: editor, view: view, window: window)
+        await settingsChecks(store, editor: editor, view: view, window: window)
+        await reviewFixChecks(store, editor: editor, view: view, window: window)
         await displayLinkChecks(store, view: view, window: window)
         await timingChecks(store)
         await activationChecks(store, editor: editor)
@@ -191,6 +204,7 @@
     private static func replace(_ editor: OutlineTextView, with text: String) {
       editor.insertText(
         text, replacementRange: NSRange(location: 0, length: (editor.string as NSString).length))
+      if editor.string != text { check(false, "replace: editor editable \(editor.isEditable)") }
     }
 
     private static func select(_ name: String, in editor: OutlineTextView, whole: Bool = false) {
@@ -251,8 +265,22 @@
       if bound && !command.isDisabled(store) { command.perform(store) }
     }
 
-    /// AppKit's own items (Undo, Redo) have real actions.
-    private static func systemMenu(_ action: String, name: String) {
+    /// AppKit closes the automatic undo group when it finishes handling an event. Programmatic
+    /// edits and `window.sendEvent` keys aren't events, so without this every step of a run
+    /// with nobody at the Mac merges into one undo group. Posts one, as a key press would.
+    private static func endEvent() async {
+      guard
+        let event = NSEvent.otherEvent(
+          with: .applicationDefined, location: .zero, modifierFlags: [], timestamp: 0,
+          windowNumber: 0, context: nil, subtype: 0, data1: 0, data2: 0)
+      else { return check(false, "event boundary created") }
+      NSApp.postEvent(event, atStart: false)
+      try? await Task.sleep(for: .milliseconds(30))
+    }
+
+    /// AppKit's own items (Undo, Redo) have real actions. Each press is a new event.
+    private static func systemMenu(_ action: String, name: String) async {
+      await endEvent()
       let selector = Selector(action)
       guard let mainMenu = NSApp.mainMenu,
         let item = menuItem(in: mainMenu, where: { $0.action == selector }),
@@ -280,13 +308,14 @@
       store.focusEditor()
       select("Second", in: editor, whole: true)
       let before = editor.string
+      await endEvent()
       menu(.toggleDone, name: "Toggle Done ⇧⌘X")
       check(
         editor.string.contains("- [x] Second"),
         "⇧⌘X toggles done with selected text, no cut conflict")
-      systemMenu("undo:", name: "Undo")
-      check(editor.string == before, "Undo restores done toggle")
-      systemMenu("redo:", name: "Redo")
+      await systemMenu("undo:", name: "Undo")
+      check(editor.string == before, "Undo restores done toggle\(textDiff(before, editor.string))")
+      await systemMenu("redo:", name: "Redo")
       check(editor.string.contains("- [x] Second"), "Redo restores done toggle")
       menu(.toggleDone, name: "Toggle Done again")
       select("Second", in: editor)
@@ -316,8 +345,8 @@
       let enlarged = view.scene.camera.zoom
       menu(.zoomOut)
       check(view.scene.camera.zoom < enlarged, "Zoom Out changes camera")
-      menu(.fitAll)
-      menu(.focusGraph)
+      menu(.fitAll, name: "Fit All ⌥⌘0")
+      menu(.focusGraph, name: "Focus Graph ⌥⌘2")
       check(window.firstResponder === view, "Focus Graph reaches graph view")
       sendKey("\u{1b}", code: 53, window: window)
       check(view.selection == nil && store.detail == nil, "Esc clears the selection")
@@ -328,7 +357,7 @@
         sendKey(characters, code: code, window: window)
         check(view.scene.camera.offset != camera.offset, "graph arrow key \(code) pans")
       }
-      menu(.focusEditor)
+      menu(.focusEditor, name: "Focus Editor ⌥⌘1")
       check(window.firstResponder === editor, "Focus Editor reaches text view")
       let map = store.currentURL
       menu(.nextMap)
@@ -855,7 +884,10 @@
       log.notice(
         "motion metrics crowded-drag nodes=500 affected=\(moved, privacy: .public) main-frame-average-ms=\(metrics.averageMilliseconds, privacy: .public) main-frame-worst-ms=\(metrics.worstMilliseconds, privacy: .public) frames=\(metrics.frames, privacy: .public)"
       )
-      check(metrics.frames > 30 && moved < 500, "crowded drag animates and stays local")
+      check(
+        metrics.frames > 30 && moved < 200, "crowded drag animates and stays local (\(moved) moved)"
+      )
+      fixedCheck(layout, view: view, name: "crowded drag: outside the region")
     }
 
     // MARK: Selection (roadmap 3b)
@@ -923,7 +955,7 @@
       replace(
         editor,
         with: title
-          + "\nGroup\n- Parent\n\t- Child\n\t- Kid\n- Second /high\nOther\n- Distant [[Second]]\n")
+          + "\nGroup\n- Parent\n\t- Child\n\t- Kid\n- Second /high\nOther\n- Distant [Second]\n")
       guard await frozen(store) else { return }
       view.fitAll()
       try? await Task.sleep(for: .milliseconds(450))
@@ -974,12 +1006,14 @@
       editor.setSelectedRange(
         NSRange(location: NSMaxRange(store.model.nodes[distant].sourceRange), length: 0))
       let typed = editor.string
+      await endEvent()
       if let event = key("\r", code: 36, window: window) { NSApp.sendEvent(event) }
       check(
         editor.string != typed && !view.isNaming,
         "editor keeps Return while it has focus (app routing)")
+      await endEvent()
       editor.undoManager?.undo()
-      check(editor.string == typed, "editor Return undone")
+      check(editor.string == typed, "editor Return undone\(textDiff(typed, editor.string))")
       guard await current(store, "graph current after editor Return") else { return }
 
       // Return adds a sibling after the branch, typed inline.
@@ -1021,6 +1055,8 @@
 
       // Double-click a label renames it, keeping its metadata.
       view.select(nil, camera: false)
+      view.fitAll()  // the camera may still frame the last selection, without "Distant"
+      try? await Task.sleep(for: .milliseconds(450))
       guard let d = nodeIndex(view, "Distant"), let dp = target(view, d) else {
         return check(false, "rename target on screen")
       }
@@ -1029,7 +1065,7 @@
       try? await Task.sleep(for: .milliseconds(450))
       type("Faraway", window: window)
       sendKey("\r", code: 36, window: window)
-      check(line(editor, containing: "Faraway") == "- Faraway [[Second]]", "rename keeps the link")
+      check(line(editor, containing: "Faraway") == "- Faraway [Second]", "rename keeps the link")
       guard await current(store, "rename parse shown") else { return }
 
       // Double-click empty canvas adds a group at that spot.
@@ -1042,7 +1078,7 @@
       check(view.isNaming && view.scene.debugGhostVisible, "double-click canvas starts a group")
       type("Fresh group", window: window)
       sendKey("\r", code: 36, window: window)
-      check(editor.string.hasSuffix("- Faraway [[Second]]\nFresh group\n"), "group appended")
+      check(editor.string.hasSuffix("- Faraway [Second]\nFresh group\n"), "group appended")
       guard await frozen(store), let made = nodeIndex(view, "Fresh group"),
         let layout = view.scene.layout
       else { return }
@@ -1056,28 +1092,30 @@
       store.graphSelected(parentNow)
       store.focusGraph()
       let beforeDelete = editor.string
+      await endEvent()
       sendKey("\u{7f}", code: 51, window: window)
       check(
         !editor.string.contains("Parent") && !editor.string.contains("Child")
           && !editor.string.contains("Kid"), "Delete removes the node and its subtasks")
       guard await current(store, "delete parse shown") else { return }
       check(view.selection == nodeIndex(view, "Group"), "Delete selects the parent")
-      systemMenu("undo:", name: "Undo after Delete")
+      await systemMenu("undo:", name: "Undo after Delete")
       check(editor.string == beforeDelete, "⌘Z restores the exact text")
       check(store.text == editor.string, "undo reaches the store (saved and re-parsed)")
       guard await current(store, "undo parse shown") else { return }
 
-      // ⌥⌘1–4 and ⌥⌘0 write, replace and clear the priority tag.
+      // ⌘1–4 and ⌘0 with the graph focused write, replace and clear the selected node's tag.
       guard let far = nodeIndex(view, "Faraway") else { return }
       view.select(far, camera: false)
       store.graphSelected(far)
+      store.focusGraph()
       for (command, expected) in [
-        (AppCommand.priorityHigh, "- Faraway [[Second]] /high"),
-        (.priorityMedium, "- Faraway [[Second]] /medium"),
-        (.priorityLow, "- Faraway [[Second]] /low"),
-        (.priorityChill, "- Faraway [[Second]] /chill"), (.priorityNone, "- Faraway [[Second]]"),
+        (AppCommand.priorityHigh, "- Faraway [Second] /high"),
+        (.priorityMedium, "- Faraway [Second] /medium"),
+        (.priorityLow, "- Faraway [Second] /low"),
+        (.priorityChill, "- Faraway [Second] /chill"), (.priorityNone, "- Faraway [Second]"),
       ] {
-        menu(command, name: "priority \(command.title)")
+        menu(command, name: "graph priority \(command.title) ⌘")
         let found = line(editor, containing: "Faraway")
         check(found == expected, "\(command.title) writes \(expected) (found \(found))")
         guard await current(store, "priority parse shown") else { return }
@@ -1188,6 +1226,273 @@
       _ = await wait(
         "switch back after selection", until: { !store.isSwitching && store.currentURL == map })
       _ = await frozen(store)
+    }
+
+    // MARK: Settings, forces panel, fonts and shortcuts (roadmap 4)
+
+    /// For failure messages: where two texts first differ, escaped.
+    private static func textDiff(_ expected: String, _ found: String) -> String {
+      guard expected != found else { return "" }
+      let prefix = zip(expected, found).prefix { $0 == $1 }.count
+      func near(_ text: String) -> String {
+        String(text.dropFirst(max(0, prefix - 12)).prefix(40)).debugDescription
+      }
+      return " (expected \(near(expected)), found \(near(found)))"
+    }
+
+    private static func pins(_ view: GraphView) -> [String: LayoutPoint] {
+      view.displayedSimulation?.pins ?? [:]
+    }
+
+    private static func settingsChecks(
+      _ store: MapStore, editor: OutlineTextView, view: GraphView, window: NSWindow
+    ) async {
+      defer { store.preferences = Preferences() }
+      let title = MapDocument.title(of: store.text) ?? "Smoke"
+      replace(
+        editor,
+        with: title
+          + "\nGroup\n- Parent\n\t- Child\n\t- Kid\n- Second /high\nOther\n- Distant [Second]\n- Near\n"
+      )
+      guard await frozen(store) else { return }
+      view.fitAll()
+      try? await Task.sleep(for: .milliseconds(450))
+
+      // ⌘1–4 and ⌘0 in the editor: the current or selected bullet lines.
+      store.focusEditor()
+      let ns = editor.string as NSString
+      let start = ns.range(of: "Child").location
+      editor.setSelectedRange(
+        NSRange(location: start, length: NSMaxRange(ns.range(of: "Kid")) - start))
+      menu(.priorityMedium, name: "editor priority Medium ⌘2")
+      check(
+        line(editor, containing: "Child") == "\t- Child /medium"
+          && line(editor, containing: "Kid") == "\t- Kid /medium",
+        "⌘2 sets the selected bullet lines' priority")
+      select("Second", in: editor)
+      menu(.priorityChill, name: "editor priority Chill ⌘4")
+      check(
+        line(editor, containing: "Second") == "- Second /chill",
+        "⌘4 replaces the tag on the cursor line")
+      for command in [AppCommand.priorityHigh, .priorityLow] {
+        menu(command, name: "editor priority \(command.title)")
+      }
+      check(line(editor, containing: "Second") == "- Second /low", "⌘1 and ⌘3 in the editor")
+      menu(.priorityNone, name: "editor priority None ⌘0")
+      check(line(editor, containing: "Second") == "- Second", "⌘0 clears the cursor line's tag")
+      editor.setSelectedRange(
+        NSRange(location: start, length: NSMaxRange(ns.range(of: "Kid")) - start))
+      menu(.priorityNone, name: "editor priority None on lines")
+      check(!editor.string.contains("/medium"), "⌘0 clears the selected lines")
+      guard await frozen(store) else { return }
+
+      // ⌥⌘F shows and hides the floating panel (5 sliders) in the main window.
+      check(!DebugControls.panelVisible, "forces panel hidden by default")
+      menu(.toggleForcesPanel, name: "Forces Panel ⌥⌘F")
+      _ = await wait("forces panel shows") {
+        store.preferences.showForcesPanel && DebugControls.panelVisible
+          && DebugControls.shown.keys.filter { $0.hasPrefix("panel ") }.count == 5
+      }
+      menu(.toggleForcesPanel, name: "Forces Panel ⌥⌘F again")
+      _ = await wait("forces panel hides") {
+        !store.preferences.showForcesPanel && !DebugControls.panelVisible
+      }
+      store.preferences.showForcesPanel = true
+      _ = await wait("forces panel back for the next checks") { DebugControls.panelVisible }
+      guard await frozen(store) else { return }
+      displayLinkIdle()
+
+      // A dropped node is pinned; force changes reshuffle once, after the slider stops, keeping it.
+      guard
+        let layout = view.scene.layout,
+        let near = ([nodeIndex(view, "Near")].compactMap { $0 } + Array(layout.nodes.indices))
+          .first(where: { layout.model.nodes[$0].children.isEmpty && target(view, $0) != nil }),
+        let p = target(view, near)
+      else { return check(false, "pin target on screen") }
+      mouse(.leftMouseDown, point: p, view: view, window: window)
+      mouse(.leftMouseDragged, point: CGPoint(x: p.x + 30, y: p.y + 20), view: view, window: window)
+      mouse(.leftMouseUp, point: CGPoint(x: p.x + 30, y: p.y + 20), view: view, window: window)
+      guard await frozen(store), !pins(view).isEmpty else {
+        return check(false, "drag pins a node")
+      }
+      let pinned = pins(view)
+      let reshuffles = store.debugReshuffles
+      let seed = view.scene.layout?.seed
+      for repel in stride(from: 500.0, through: 700, by: 50) {
+        store.preferences.forces.repel = repel  // a slider drag: one change per frame or so
+        try? await Task.sleep(for: .milliseconds(40))
+      }
+      check(store.debugReshuffles == reshuffles, "no reshuffle while the slider moves")
+      _ = await wait("one reshuffle after the slider stops", seconds: 3) {
+        store.debugReshuffles == reshuffles + 1
+      }
+      // The model is unchanged, so wait for the new layout itself before waiting for its settle.
+      _ = await wait("the force change used a new seed") { view.scene.layout?.seed != seed }
+      guard await frozen(store), let shuffled = view.scene.layout else { return }
+      try? await Task.sleep(for: .milliseconds(300))
+      check(store.debugReshuffles == reshuffles + 1, "exactly one debounced reshuffle")
+      let key = pinned.keys.first!
+      let index = shuffled.model.nodes.firstIndex { $0.pathKey == key }
+      check(
+        pins(view) == pinned
+          && index.map { LayoutPoint(x: shuffled.nodes[$0].x, y: shuffled.nodes[$0].y) }
+            == pinned[key],
+        "the auto reshuffle keeps pinned nodes in place")
+
+      // Label size: bigger labels, same seed and positions; only new overlaps move.
+      guard let sized = view.scene.layout else { return }
+      store.preferences.labelSize = 1.6
+      let group = sized.model.nodes.firstIndex { $0.depth == 0 } ?? 0
+      _ = await wait("label size resizes labels") {
+        view.scene.layout.map { abs($0.nodes[group].fontSize - 16 * 1.6) < 1e-9 } == true
+      }
+      guard await frozen(store), let big = view.scene.layout else { return }
+      check(
+        big.seed == sized.seed && store.debugReshuffles == reshuffles + 1,
+        "label size doesn't reshuffle")
+      fixedCheck(sized, view: view, name: "label size push-apart")
+      menu(.smallerLabels, name: "Smaller Labels ⌥⌘-")
+      check(abs(store.preferences.labelSize - 1.55) < 1e-9, "⌥⌘- steps the label size down")
+      menu(.biggerLabels, name: "Bigger Labels ⌥⌘=")
+      check(abs(store.preferences.labelSize - 1.6) < 1e-9, "⌥⌘= steps the label size up")
+      store.preferences.labelSize = 1
+      _ = await wait("label size back to 1") {
+        view.scene.layout.map { abs($0.nodes[group].fontSize - 16) < 1e-9 } == true
+      }
+      guard await frozen(store), let small = view.scene.layout else { return }
+
+      // Font: re-measured labels, local push-apart, no reshuffle.
+      for family in ["Quicksand", "Outfit", GraphFonts.systemRounded] {
+        store.preferences.labelFont = family
+        _ = await wait("font \(family) shown") { view.scene.labelFamily == family }
+        guard await frozen(store), let shown = view.scene.layout else { return }
+        check(
+          view.scene.labelFamily == family && shown.seed == small.seed
+            && store.debugReshuffles == reshuffles + 1, "font \(family) applied without reshuffle")
+      }
+      check(
+        view.scene.layout?.nodes.map(\.halfWidth) != small.nodes.map(\.halfWidth),
+        "a font change re-measures label boxes")
+      store.preferences.labelFont = GraphFonts.defaultFamily
+      _ = await wait("default font back") { view.scene.labelFamily == GraphFonts.defaultFamily }
+      guard await frozen(store) else { return }
+
+      // ⌘, opens Settings; it and the panel edit the same value in both directions.
+      menu(.settings, name: "Settings ⌘,")
+      var settings: NSWindow?
+      _ = await wait("Settings window opens") {
+        settings = NSApp.windows.first { $0 !== window && $0.isVisible }
+        return settings != nil && DebugControls.settingsVisible
+          && DebugControls.sliders["settings Link distance"] != nil
+      }
+      guard let settings, let panel = DebugControls.sliders["panel link distance"],
+        let other = DebugControls.sliders["settings Link distance"]
+      else { return check(false, "link distance sliders in the panel and Settings") }
+      func shown(_ key: String) -> Double? { DebugControls.shown[key] }
+      store.preferences.forces.linkDistance = 150
+      _ = await wait("a store change shows in the panel and Settings") {
+        shown("panel link distance") == 150 && shown("settings Link distance") == 150
+      }
+      panel.wrappedValue = 100  // what the panel's slider does when dragged
+      _ = await wait("the panel slider updates the store and Settings") {
+        store.preferences.forces.linkDistance == 100 && shown("settings Link distance") == 100
+      }
+      other.wrappedValue = 60
+      _ = await wait("the Settings slider updates the store and the panel") {
+        store.preferences.forces.linkDistance == 60 && shown("panel link distance") == 60
+      }
+      settings.close()
+      window.makeKeyAndOrderFront(nil)
+      guard await frozen(store) else { return }
+
+      // Animate settle off: a reshuffle shows the frozen result with no display link.
+      store.preferences.animateSettle = false
+      let previousSeed = view.scene.layout?.seed
+      var animated = false
+      menu(.reshuffle, name: "Reshuffle with animate off")
+      _ = await wait("animate-off reshuffle shown") {
+        animated = animated || view.isAnimating || GraphView.debugLiveDisplayLinks > 0
+        return view.scene.layout?.seed != previousSeed
+          && view.displayedSimulation?.isFrozen == true
+      }
+      try? await Task.sleep(for: .milliseconds(200))
+      check(!animated && !view.isAnimating, "animate off computes the layout without animating")
+      store.preferences.animateSettle = true
+      guard await frozen(store) else { return }
+    }
+
+    /// The two fixes from the 3b review.
+    private static func reviewFixChecks(
+      _ store: MapStore, editor: OutlineTextView, view: GraphView, window: NSWindow
+    ) async {
+      guard await frozen(store), let map = store.currentURL else { return }
+      // 1. Editor undo and redo reach the store, the file and a reopened map.
+      func reopen(_ name: String) async -> Bool {
+        guard await wait("\(name): autosaved", until: { !store.hasUnsavedEdits }) else {
+          return false
+        }
+        store.switchMap(by: 1)
+        guard
+          await wait(
+            "\(name): switched away", until: { !store.isSwitching && store.currentURL != map })
+        else { return false }
+        store.switchMap(map)
+        return await wait("\(name): switched back") {
+          !store.isSwitching && store.currentURL == map
+        }
+      }
+      store.focusEditor()
+      let before = editor.string
+      editor.setSelectedRange(NSRange(location: (before as NSString).length, length: 0))
+      await endEvent()
+      if !before.hasSuffix("\n") { sendKey("\r", code: 36, window: window) }
+      for character in "- undo me" { sendKey(String(character), code: 0, window: window) }
+      check(
+        editor.string.contains("- undo me") && store.text == editor.string, "typed line in store")
+      for _ in 0..<4 where editor.string != before {
+        await systemMenu("undo:", name: "Undo typed line")
+      }
+      check(
+        editor.string == before && store.text == before,
+        "⌘Z restores the pre-typing text in the store\(textDiff(before, editor.string))\(textDiff(before, store.text))"
+      )
+      guard await reopen("after undo") else { return }
+      check(store.text == before, "undone text survives autosave and a map switch")
+      editor.setSelectedRange(NSRange(location: 0, length: 0))
+      // The reopened map has a fresh undo stack, so type and undo again before redoing.
+      store.focusEditor()
+      editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
+      await endEvent()
+      for character in "- redo me" { sendKey(String(character), code: 0, window: window) }
+      let typed = editor.string
+      for _ in 0..<4 where editor.string != before {
+        await systemMenu("undo:", name: "Undo before redo")
+      }
+      for _ in 0..<4 where editor.string != typed {
+        await systemMenu("redo:", name: "Redo typed line")
+      }
+      check(editor.string == typed && store.text == typed, "⇧⌘Z restores the line in the store")
+      guard await reopen("after redo") else { return }
+      check(store.text == typed, "redone text survives autosave and a map switch")
+      replace(editor, with: before)
+      guard await frozen(store) else { return }
+
+      // 2. A refused graph edit says so in the detail panel instead of failing silently.
+      guard let index = nodeIndex(view, "Second") else { return check(false, "refusal target") }
+      view.select(index, camera: false)
+      store.graphSelected(index)
+      editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
+      await endEvent()
+      editor.insertText("x", replacementRange: editor.selectedRange())  // the parse is now stale
+      let refused = !store.applyGraphEdit(.priority(index, .high))
+      check(
+        refused && store.notice == "couldn't apply that edit, try again",
+        "refused edit shows a notice")
+      check(!editor.string.contains("/high"), "a refused edit changes nothing")
+      _ = await wait("the notice clears by itself", seconds: 5) { store.notice == nil }
+      await endEvent()
+      editor.undoManager?.undo()
+      guard await frozen(store) else { return }
     }
 
     /// Main-thread time to apply a selection on the 500-node fixture.

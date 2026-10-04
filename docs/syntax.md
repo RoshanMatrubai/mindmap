@@ -15,7 +15,7 @@ school
 - calc iii work
 	- finish pset /friday /medium
 	- study for test on curvature /monday /high
-	- frq practice [[study plan]]
+	- frq practice [study plan]
 study plan
 - flashcards
 ```
@@ -30,7 +30,7 @@ study plan
 | Tab + `- text` (each tab is one level) | Subtask of the task above. Arbitrary depth |
 | `/monday` through `/sunday`, `/tomorrow`, `/tmrw`, `/today` | Due date |
 | `/high`, `/medium` (alias `/med`), `/low`, `/chill` | Priority |
-| `[[name]]` | Cross link to any node with that name, drawn as a dashed curve |
+| `[name]` | Cross link to any node with that name, drawn as a dashed curve. `[[name]]` works the same |
 
 ## Editor key behavior (match Notes)
 
@@ -53,6 +53,6 @@ Metadata words are case-insensitive and must be exact known words preceded by wh
 
 The first non-empty line is always the title. Ignore blank lines and accept CRLF. A non-bullet line is a group regardless of indentation. Bullets before any explicit group belong to one implicit group named `loose`, created at the first such line. Tabs each add one indentation level. For spaces, the indentation unit is the smallest nonzero leading-space run in the file, normally 2 or 4 spaces. An indentation jump deeper than the available parent plus one is clamped to parent plus one and produces a warning. Skip lines whose name is empty after metadata and links are removed.
 
-`[[name]]` matches trimmed node names case-insensitively. Prefer a target in the source node's group; otherwise use the first matching node in document order. Ignore self-links. Keep unresolved link names in the model without creating an edge.
+A link is `[name]` or `[[name]]` anywhere in a line, the name being everything inside the brackets. The one exception is `[ ]`, `[x]` or `[X]` right after the bullet, which is the done marker; the same text anywhere else links to a node named `x` (or is ignored if blank). Empty `[]`, blank names and unbalanced brackets stay in the name as text. A single-bracket name can't contain another bracket. Brackets in ordinary text, as in `chapter [3]`, become links too (unresolved when no node matches). The name matches trimmed node names case-insensitively. Prefer a target in the source node's group; otherwise use the first matching node in document order. Ignore self-links. Keep unresolved link names in the model without creating an edge.
 
 Nodes retain their typed names, source line and character range. Their stable path keys use lowercased group/task/subtask names; duplicate paths get `#2`, `#3` suffixes in document order.

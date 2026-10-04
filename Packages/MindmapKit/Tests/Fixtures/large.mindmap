@@ -39,7 +39,7 @@ basement
 - count ropes by the door /monday [[balcony]]
 	- tidy lanterns with care
 	- build ropes
-- count crates twice [[attic]]
+- count crates twice [attic]
 - map jars again /medium
 - measure maps
 	- order bells for spring
@@ -47,7 +47,7 @@ basement
 	- measure lanterns again
 		- sort boxes again
 - sort baskets for spring
-- build tiles [[attic]]
+- build tiles [attic]
 - repair maps for spring /high
 - tidy ladders by the door /tuesday /high
 - test baskets
@@ -73,7 +73,7 @@ garage
 - order sails by the door
 pantry
 - repair lanterns twice
-- [x] wrap candles /monday [[balcony]]
+- [x] wrap candles /monday [balcony]
 - test clocks
 - [x] fix baskets
 	- oil lanterns
@@ -117,7 +117,7 @@ shed
 	- clean buckets
 		- clean clocks again
 - build lanterns twice /high
-- measure kites with care /sunday [[garage]]
+- measure kites with care /sunday [garage]
 	- sort baskets with care
 	- list frames twice
 - polish jars
@@ -133,7 +133,7 @@ studio
 - sketch brushes for spring
 	- test sails
 	- pack benches with care
-- measure sails /medium [[balcony]]
+- measure sails /medium [balcony]
 - pack shelves for spring /medium
 - paint candles by the door
 hallway
@@ -143,7 +143,7 @@ hallway
 - replace baskets twice /tomorrow
 - wrap bells by the door /thursday
 	- water brushes
-- order maps by the door [[basement]]
+- order maps by the door [basement]
 - sketch jars with care
 	- plan buckets for spring
 	- water kites
@@ -158,10 +158,10 @@ hallway
 	- check ropes with care
 		- count buckets
 greenhouse
-- [x] plan candles for spring [[pantry]]
+- [x] plan candles for spring [pantry]
 - check pots for spring
 - count ladders twice
-- sweep buckets with care /medium [[hallway]]
+- sweep buckets with care /medium [hallway]
 	- stack notes with care
 	- sort boxes for spring
 boathouse
@@ -175,7 +175,7 @@ boathouse
 - stack crates /wednesday /low
 cellar
 - paint boxes
-- [x] test boxes /high [[hallway]]
+- [x] test boxes /high [hallway]
 	- polish candles for spring
 - build notes with care /wednesday
 	- count brushes
@@ -187,7 +187,7 @@ loft
 	- test frames again
 	- list pots again
 	- sketch clocks by the door
-- wrap blankets with care [[greenhouse]]
+- wrap blankets with care [greenhouse]
 - wrap crates again
 	- paint benches
 - repair kites by the door /chill
@@ -204,14 +204,14 @@ orchard
 - polish hinges
 workshop
 - paint boxes twice
-- list ladders again /low [[pantry]]
+- list ladders again /low [pantry]
 - paint ladders for spring
-- wrap sails with care [[cellar]]
+- wrap sails with care [cellar]
 	- clean notes
 - [x] check shelves
 	- map buckets again
 	- fix candles for spring
-- water lanterns /today [[attic]]
+- water lanterns /today [attic]
 	- tidy kites
 	- check kites
 - tidy brushes /thursday
@@ -227,7 +227,7 @@ library
 	- build maps
 	- tidy frames
 	- sort hinges by the door
-- water jars [[greenhouse]]
+- water jars [greenhouse]
 	- water frames twice
 	- sort buckets again
 - water notes for spring
@@ -334,7 +334,7 @@ harbor
 - wrap kites for spring
 - replace blankets by the door
 meadow
-- order kites with care [[greenhouse]]
+- order kites with care [greenhouse]
 	- tidy maps twice
 - sketch kites /medium
 - label kites again /sunday /low
@@ -352,7 +352,7 @@ cabin
 - build blankets by the door
 - repair lanterns for spring
 - pack seeds twice
-- plan boxes [[garage]]
+- plan boxes [garage]
 - check lanterns with care /saturday
 - list ladders for spring /today
 	- pack lanterns with care
@@ -414,10 +414,10 @@ tower
 - repair pots twice
 - build clocks twice
 bridge
-- test frames /tomorrow [[orchard]]
+- test frames /tomorrow [orchard]
 - map buckets
 - [x] check lanterns /chill
-- label sails /tuesday [[basement]]
+- label sails /tuesday [basement]
 	- check benches for spring
 	- repair blankets twice
 	- replace ladders
@@ -425,14 +425,14 @@ bridge
 canal
 - pack hinges twice
 - replace buckets
-- oil lanterns /today [[bakery]]
+- oil lanterns /today [bakery]
 - plan kites twice
 - fix tiles by the door /low
 	- polish frames again
 	- test lanterns for spring
 		- count blankets by the door
 	- count maps for spring
-- count bells by the door [[courtyard]]
+- count bells by the door [courtyard]
 	- build frames with care
 - repair maps by the door
 	- stack tools
@@ -461,11 +461,11 @@ lighthouse
 	- plan blankets with care
 	- wrap bells by the door
 vineyard
-- wrap lanterns for spring [[attic]]
+- wrap lanterns for spring [attic]
 	- pack boxes with care
 		- polish seeds for spring
 	- paint baskets
-- build ladders [[harbor]]
+- build ladders [harbor]
 	- wrap hinges
 - order ladders
 - [x] paint kites /chill
@@ -474,9 +474,9 @@ vineyard
 	- stack benches by the door
 - stack maps
 mill
-- [x] fix notes /chill [[market]]
+- [x] fix notes /chill [market]
 - label frames
-- sketch notes twice [[loft]]
+- sketch notes twice [loft]
 - list ladders twice
 - [x] sketch bells with care
 quarry

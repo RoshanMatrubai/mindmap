@@ -467,7 +467,7 @@ extension OutlineEditing {
       selection: parent ?? NSRange(location: location, length: 0))
   }
 
-  /// ⌥⌘1–4 and ⌥⌘0: writes, replaces or removes the node's `/priority` word.
+  /// ⌘1–4 and ⌘0 on the graph: writes, replaces or removes the node's `/priority` word.
   public static func setPriority(
     text: String, model: MapModel, node: Int, _ priority: MapPriority?
   ) -> TextChange? {
@@ -476,29 +476,59 @@ extension OutlineEditing {
     }
     let range = model.nodes[node].sourceRange
     let line = (text as NSString).substring(with: range)
+    let edits = priorityEdits(line, priority)
+    guard !edits.isEmpty else { return nil }
+    let result = NSMutableString(string: line)
+    for edit in edits.reversed() { result.replaceCharacters(in: edit.range, with: edit.text) }
+    return TextChange(
+      range: range, replacement: result as String,
+      selection: NSRange(location: range.location, length: result.length))
+  }
+
+  /// ⌘1–4 and ⌘0 in the editor: the same on every bullet line the selection touches.
+  public static func setPriority(text: String, selection: NSRange, _ priority: MapPriority?)
+    -> TextChange?
+  {
+    let source = text as NSString
+    let lines = paragraphs(source)
+    guard let selected = selectedLines(lines, selection: selection, source: source) else {
+      return nil
+    }
+    let edits = lines[selected].filter { bullet(in: $0, source: source) != nil }.flatMap { line in
+      priorityEdits(source.substring(with: line.range), priority).map {
+        (
+          NSRange(location: line.range.location + $0.range.location, length: $0.range.length),
+          $0.text
+        )
+      }
+    }
+    return apply(edits, in: lines[selected], source: source, selection: selection)
+  }
+
+  /// Edits within `line`, in order: the first `/priority` word is replaced in place, later ones
+  /// are removed with the space before them, and a missing one is appended.
+  private static func priorityEdits(_ line: String, _ priority: MapPriority?) -> [(
+    range: NSRange, text: String
+  )] {
     let ns = line as NSString
     let found = MapParser.metadataTokens(in: line).filter {
       if case .priority = $0.kind { return true }
       return false
     }.map(\.range)
-    var result = line
-    // Later tokens first, so earlier ranges stay valid. The first one is replaced in place.
-    for (i, token) in found.enumerated().reversed() {
-      if i == 0, let priority {
-        result = (result as NSString).replacingCharacters(in: token, with: "/" + priority.rawValue)
-      } else {
-        let space = token.location > 0 && [9, 32].contains(ns.character(at: token.location - 1))
-        result = (result as NSString).replacingCharacters(
-          in: NSRange(
-            location: token.location - (space ? 1 : 0), length: token.length + (space ? 1 : 0)),
-          with: "")
-      }
+    guard !found.isEmpty else {
+      return priority.map { [(NSRange(location: ns.length, length: 0), " /" + $0.rawValue)] } ?? []
     }
-    if found.isEmpty, let priority { result += " /" + priority.rawValue }
-    guard result != line else { return nil }
-    return TextChange(
-      range: range, replacement: result,
-      selection: NSRange(location: range.location, length: (result as NSString).length))
+    return found.enumerated().compactMap { i, token in
+      if i == 0, let priority {
+        let word = "/" + priority.rawValue
+        return ns.substring(with: token) == word ? nil : (token, word)
+      }
+      let space = token.location > 0 && [9, 32].contains(ns.character(at: token.location - 1))
+      return (
+        NSRange(location: token.location - (space ? 1 : 0), length: token.length + (space ? 1 : 0)),
+        ""
+      )
+    }
   }
 
   private static func cleaned(_ name: String) -> String? {

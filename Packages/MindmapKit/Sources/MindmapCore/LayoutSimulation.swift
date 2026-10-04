@@ -17,6 +17,8 @@ public struct LayoutSimulation: Sendable {
   /// began, neither one moving. The full settle allows cross-group overlaps and packs groups at
   /// the margin; a cascade that resolved those would ripple through the whole map.
   private var existing: [Int: Double] = [:]
+  /// A drag's push cascade stays near the dragged node (docs/design.md, step 4 user decisions).
+  private var cascade: CascadeLimit?
   public private(set) var isFullLayout: Bool
   public private(set) var isFrozen = false
   public private(set) var affected = Set<Int>()
@@ -100,6 +102,39 @@ public struct LayoutSimulation: Sendable {
     state.alpha = isFrozen ? 0 : 1
   }
 
+  /// The label size or font changed: the same map with new label boxes. Every node keeps its
+  /// position; only overlaps deeper than they were with the old boxes are pushed apart, by
+  /// collision alone (no springs, no reshuffle).
+  public init(
+    resizing previous: GraphLayout, pins: [String: LayoutPoint] = [:],
+    params: ForceParams = .init(), today: Date, calendar: Calendar,
+    measure: ForceLayout.Measure = ForceLayout.estimate
+  ) {
+    self.init(
+      model: previous.model, seed: previous.seed, pins: pins, params: params, today: today,
+      calendar: calendar, measure: measure)
+    isFullLayout = false
+    for (i, node) in previous.nodes.enumerated() where !state.pinned[i] {
+      state.x[i] = node.x
+      state.y[i] = node.y
+    }
+    let boxes = (state.hw, state.up, state.dn)
+    state.hw = previous.nodes.map(\.halfWidth)
+    state.up = previous.nodes.map(\.up)
+    state.dn = previous.nodes.map(\.down)
+    existing = state.existingOverlaps(except: [])
+    (state.hw, state.up, state.dn) = boxes
+    let grown = model.nodes.indices.filter {
+      let old = previous.nodes[$0]
+      return state.hw[$0] > old.halfWidth || state.up[$0] > old.up || state.dn[$0] > old.down
+    }
+    affected = state.overlapping(grown, existing: existing)
+    activateOverlaps()
+    affected = affected.filter { !state.pinned[$0] }
+    isFrozen = affected.isEmpty
+    state.alpha = isFrozen ? 0 : 1
+  }
+
   public init(
     model: MapModel, sidecar: LayoutSidecar, params: ForceParams = .init(), today: Date,
     calendar: Calendar, measure: ForceLayout.Measure = ForceLayout.estimate
@@ -166,6 +201,9 @@ public struct LayoutSimulation: Sendable {
     springNodes = dragSubtree
     affected = dragSubtree
     existing = state.existingOverlaps(except: dragSubtree)
+    cascade = CascadeLimit(
+      center: index, radius: CascadeLimit.radiusInLinks * state.params.linkDistance,
+      hops: Dictionary(uniqueKeysWithValues: dragSubtree.map { ($0, 0) }))
     state.vx = Array(repeating: 0, count: state.count)
     state.vy = state.vx
     for i in dragSubtree {
@@ -262,15 +300,15 @@ public struct LayoutSimulation: Sendable {
   private func overlaps(_ i: Int, _ j: Int) -> Bool {
     let ox =
       min(state.x[i] + state.hw[i], state.x[j] + state.hw[j])
-      - max(state.x[i] - state.hw[i], state.x[j] - state.hw[j]) + 6
+      - max(state.x[i] - state.hw[i], state.x[j] - state.hw[j]) + localMargin
     let oy =
       min(state.y[i] + state.dn[i], state.y[j] + state.dn[j])
-      - max(state.y[i] - state.up[i], state.y[j] - state.up[j]) + 6
+      - max(state.y[i] - state.up[i], state.y[j] - state.up[j]) + localMargin
     return ox > 0 && oy > 0
   }
 
   private mutating func activateOverlaps() {
-    state.expandLocalOverlaps(&affected, existing: existing)
+    state.expandLocalOverlaps(&affected, existing: existing, limit: &cascade)
   }
 
   private mutating func localTick() {
@@ -290,7 +328,15 @@ public struct LayoutSimulation: Sendable {
       active[i] = true
       free[i] = !state.pinned[i] && dragged != i
     }
-    state.localCollision(active: active, free: free, existing: existing)
+    // A bounded drag: outside nodes don't push back, and while the pointer holds still the
+    // cascade cools with it, so a jammed crowd doesn't keep creeping. Release resolves it.
+    let cooling = cascade != nil && dragged != nil
+    for _ in 0..<(cascade != nil && dragged == nil ? CascadeLimit.releasePasses : 1) {
+      state.localCollision(
+        active: active, free: free, existing: existing,
+        outsideSlack: cascade == nil ? 0 : CascadeLimit.outsideSlack,
+        strength: cooling ? min(1, state.alpha / 0.05) : 1)
+    }
     ticks += 1
     state.alpha *= 0.98
     if dragged == nil {
@@ -304,6 +350,25 @@ public struct LayoutSimulation: Sendable {
   }
 }
 
+/// The gap local motion keeps between label boxes (edits, drags, resizes). Smaller than the full
+/// settle's 6, so a settled map has room and a push doesn't have to travel far
+/// (docs/design.md, step 4 user decisions).
+let localMargin = 2.0
+
+/// Bounds a drag's push cascade: a node joins only within `radius` of the dragged node or at
+/// most `maxHops` overlaps away from the dragged subtree. Nodes outside never move; their
+/// overlaps with the region may deepen (the 3a "never worse" rule holds inside it).
+struct CascadeLimit: Sendable {
+  static let radiusInLinks = 3.0
+  static let maxHops = 2
+  static let releasePasses = 3
+  static let outsideSlack = 0.0
+  var center: Int
+  var radius: Double
+  /// Cascade distance from the dragged subtree (0), by node.
+  var hops: [Int: Int]
+}
+
 extension Simulation {
   /// Cells as wide as two of the largest label boxes plus the margin, so overlapping boxes are
   /// always in the same or adjacent cells.
@@ -315,8 +380,8 @@ extension Simulation {
   private func boxesOverlap(
     _ px: UnsafeMutablePointer<Double>, _ py: UnsafeMutablePointer<Double>, _ i: Int, _ j: Int
   ) -> (x: Double, y: Double)? {
-    let ox = min(px[i] + hw[i], px[j] + hw[j]) - max(px[i] - hw[i], px[j] - hw[j]) + 6
-    let oy = min(py[i] + dn[i], py[j] + dn[j]) - max(py[i] - up[i], py[j] - up[j]) + 6
+    let ox = min(px[i] + hw[i], px[j] + hw[j]) - max(px[i] - hw[i], px[j] - hw[j]) + localMargin
+    let oy = min(py[i] + dn[i], py[j] + dn[j]) - max(py[i] - up[i], py[j] - up[j]) + localMargin
     return ox > 0 && oy > 0 ? (ox, oy) : nil
   }
 
@@ -334,8 +399,8 @@ extension Simulation {
           if !moving.contains(i) && !moving.contains(j),
             let (ox, oy) = boxesOverlap(px, py, i, j)
           {
-            // Close pairs may use up the 6-unit margin and touch; none may overlap more than it did.
-            pairs[i * count + j] = max(min(ox, oy), 6)
+            // Close pairs may use up the margin and touch; none may overlap more than it did.
+            pairs[i * count + j] = max(min(ox, oy), localMargin)
           }
         }
       }
@@ -346,15 +411,38 @@ extension Simulation {
   /// How much of the overlap of `i` and `j` (with its margin) is beyond the tolerated depth.
   private func excess(
     _ px: UnsafeMutablePointer<Double>, _ py: UnsafeMutablePointer<Double>, _ i: Int, _ j: Int,
-    _ existing: [Int: Double]
+    _ existing: [Int: Double], slack: Double = 0
   ) -> (x: Double, y: Double, depth: Double)? {
     guard let (ox, oy) = boxesOverlap(px, py, i, j) else { return nil }
-    let allowed = existing.isEmpty ? 0 : existing[min(i, j) * count + max(i, j)] ?? 0
+    let allowed = slack + (existing.isEmpty ? 0 : existing[min(i, j) * count + max(i, j)] ?? 0)
     let depth = min(ox, oy) - allowed
     return depth > 1e-9 ? (ox, oy, depth) : nil
   }
 
-  func expandLocalOverlaps(_ affected: inout Set<Int>, existing: [Int: Double]) {
+  /// The nodes among `candidates` that overlap a neighbor beyond the tolerated depth.
+  func overlapping(_ candidates: [Int], existing: [Int: Double]) -> Set<Int> {
+    guard count > 0, !candidates.isEmpty else { return [] }
+    let grid = overlapGrid
+    var x = x
+    var y = y
+    var result = Set<Int>()
+    x.withUnsafeMutableBufferPointer { x in
+      y.withUnsafeMutableBufferPointer { y in
+        let px = x.baseAddress!
+        let py = y.baseAddress!
+        for i in candidates {
+          grid.forEachNeighbor(of: i) { j in
+            if excess(px, py, i, j, existing) != nil { result.insert(i) }
+          }
+        }
+      }
+    }
+    return result
+  }
+
+  func expandLocalOverlaps(
+    _ affected: inout Set<Int>, existing: [Int: Double], limit: inout CascadeLimit?
+  ) {
     guard count > 0, !affected.isEmpty, affected.count < count else { return }
     let grid = overlapGrid
     var active = Array(repeating: false, count: count)
@@ -371,11 +459,19 @@ extension Simulation {
           let i = pending[cursor]
           cursor += 1
           grid.forEachNeighbor(of: i) { j in
-            if !active[j] && !pinned[j] && excess(px, py, i, j, existing) != nil {
-              active[j] = true
-              affected.insert(j)
-              pending.append(j)
+            guard !active[j] && !pinned[j] && excess(px, py, i, j, existing) != nil else {
+              return
             }
+            if let bound = limit {
+              let hop = (bound.hops[i] ?? 0) + 1
+              let near =
+                hypot(px[j] - px[bound.center], py[j] - py[bound.center]) <= bound.radius
+              guard near || hop <= CascadeLimit.maxHops else { return }
+              limit!.hops[j] = hop
+            }
+            active[j] = true
+            affected.insert(j)
+            pending.append(j)
           }
         }
       }
@@ -454,7 +550,12 @@ extension Simulation {
     }
   }
 
-  mutating func localCollision(active: [Bool], free: [Bool], existing: [Int: Double]) {
+  /// With `outsideSlack` (a bounded drag), nodes outside the moving set push back only once a
+  /// region node is that much deeper into them than they started.
+  mutating func localCollision(
+    active: [Bool], free: [Bool], existing: [Int: Double], outsideSlack: Double = 0,
+    strength: Double = 1
+  ) {
     guard count > 0 else { return }
     let grid = overlapGrid
     var x = x
@@ -466,9 +567,10 @@ extension Simulation {
         for i in 0..<count where active[i] {
           grid.forEachNeighbor(of: i) { j in
             guard !(active[j] && j < i), free[i] || free[j],
-              let (ox, oy, depth) = excess(px, py, i, j, existing)
+              let (ox, oy, depth) = excess(
+                px, py, i, j, existing, slack: active[j] ? 0 : outsideSlack)
             else { return }
-            let amount = depth * 0.25 / (free[i] && free[j] ? 2 : 1)
+            let amount = depth * 0.25 * strength / (free[i] && free[j] ? 2 : 1)
             if ox < oy {
               let shift = (px[j] >= px[i] ? 1.0 : -1) * amount
               if free[i] { px[i] -= shift }

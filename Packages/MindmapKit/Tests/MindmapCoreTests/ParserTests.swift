@@ -109,6 +109,46 @@ func weekdayIncludesToday(_ weekday: Int) {
   #expect(duplicates.resolvedLinks.first?.target == 2)
 }
 
+@Test func singleAndDoubleBracketLinks() {
+  let model = parseFixture("Map\ng\n- a [b] and [[c]]\nb\nc")
+  #expect(model.nodes[1].name == "a  and")
+  #expect(model.nodes[1].linkNames == ["b", "c"])
+  #expect(model.resolvedLinks.map(\.target) == [2, 3])
+}
+
+@Test func doneMarkersAreNotLinks() {
+  let model = parseFixture("Map\ng\n- [x] task [e]\n- [ ] open\n- [X] shout\ne")
+  #expect(model.nodes.map(\.name) == ["g", "task", "open", "shout", "e"])
+  #expect(model.nodes.map(\.done) == [false, true, false, true, false])
+  #expect(model.nodes[1].linkNames == ["e"])
+  #expect(model.resolvedLinks.map(\.target) == [4])
+  #expect(model.unresolvedLinks.isEmpty)
+  let tokens = MapParser.metadataTokens(in: "- [x] task [e]").map(\.kind)
+  #expect(tokens == [.bullet, .doneMarker, .link])
+}
+
+@Test func linkToNodeNamedX() {
+  // Only right after the bullet is `[x]` the done marker; anywhere else it links to "x".
+  let model = parseFixture("Map\ng\n- task [x]\n- [x] done [x]\n- [x]glued\nx")
+  #expect(model.nodes.map(\.name) == ["g", "task", "done", "glued", "x"])
+  #expect(model.nodes.map(\.done) == [false, false, true, false, false])
+  #expect(model.resolvedLinks.map(\.source) == [1, 2, 3])
+  #expect(model.resolvedLinks.allSatisfy { $0.target == 4 })
+}
+
+@Test func emptyAndUnbalancedBracketsStayText() {
+  let model = parseFixture("Map\ng\n- a [] b\n- c [ ] d\n- open [e\n- close e]\n- [[f]\n- g [h [i]")
+  #expect(
+    model.nodes.map(\.name) == ["g", "a [] b", "c [ ] d", "open [e", "close e]", "[", "g [h"])
+  #expect(model.nodes.flatMap(\.linkNames) == ["f", "i"])
+}
+
+@Test func bracketsInOrdinaryTextBecomeLinks() {
+  let model = parseFixture("Map\ng\n- read chapter [3]")
+  #expect(model.nodes[1].name == "read chapter")
+  #expect(model.unresolvedLinks.map(\.name) == ["3"])
+}
+
 @Test func doneMarkersAndPasteBullets() {
   let model = parseFixture(
     "Map\ngroup\n- [x] Done\n- [X] Also Done\n- [ ] Open\n* Star\n** Child\n*** Grandchild")

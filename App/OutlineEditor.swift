@@ -33,6 +33,7 @@ struct OutlineEditor: NSViewRepresentable {
       width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
     view.onChange = { text in store.text = text }
     view.onSelectionChange = { range in store.editorSelectionChanged(range) }
+    view.fontSize = store.preferences.editorFontSize
     view.load(store.text, map: store.documentID)
     scroll.documentView = view
     store.editorView = view
@@ -43,6 +44,7 @@ struct OutlineEditor: NSViewRepresentable {
     guard let view = scroll.documentView as? OutlineTextView else { return }
     view.onChange = { text in store.text = text }
     view.isEditable = !store.isSwitching
+    view.fontSize = store.preferences.editorFontSize
     if view.string != store.text || view.mapID != store.documentID {
       view.load(store.text, map: store.documentID)
     }
@@ -68,7 +70,16 @@ final class OutlineTextView: NSTextView, @preconcurrency NSTextStorageDelegate {
   private(set) var mapID: UUID?
   private var styling = false
   private var unresolved: [NSRange] = []
-  private let editorFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+  private var editorFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+  /// The editor text size setting (SF Mono, 11–18 pt). Restyles the whole text when it changes.
+  var fontSize: Double = 13 {
+    didSet {
+      guard fontSize != oldValue else { return }
+      editorFont = .monospacedSystemFont(ofSize: fontSize, weight: .regular)
+      style(NSRange(location: 0, length: (string as NSString).length))
+      typingAttributes = baseAttributes
+    }
+  }
   private var baseAttributes: [NSAttributedString.Key: Any] {
     let paragraph = NSMutableParagraphStyle()
     paragraph.tabStops = []

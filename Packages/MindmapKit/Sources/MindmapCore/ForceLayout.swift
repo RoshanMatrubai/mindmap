@@ -1,6 +1,6 @@
 import Foundation
 
-public enum UrgencyMode: Sendable, Equatable {
+public enum UrgencyMode: String, Sendable, Equatable, CaseIterable {
   case pullIn, off, pushOut
 }
 

@@ -241,3 +241,26 @@ private let map = """
   #expect(Selection.node(model, atLocation: 11) == 3)
   #expect(Selection.node(model, atLocation: (text as NSString).length) == 4)
 }
+
+@Test func editorPrioritySetsEverySelectedBulletLine() throws {
+  let text = "t\ng\n- a /low\n\t- b\n- c /high /med\nh"
+  let lines = (text as NSString).range(of: "a /low\n\t- b\n- c")
+  let (all, selected) = try applied(
+    text, OutlineEditing.setPriority(text: text, selection: lines, .medium))
+  #expect(all == "t\ng\n- a /medium\n\t- b /medium\n- c /medium\nh")
+  #expect(selected == "a /medium\n\t- b /medium\n- c")
+  let cursor = NSRange(location: (text as NSString).range(of: "b").location, length: 0)
+  // b has no tag: nothing to clear.
+  #expect(OutlineEditing.setPriority(text: text, selection: cursor, nil) == nil)
+  // Group lines aren't bullets and are left alone.
+  let group = NSRange(location: (text as NSString).range(of: "g\n").location, length: 0)
+  #expect(OutlineEditing.setPriority(text: text, selection: group, .high) == nil)
+}
+
+@Test func renameKeepsSingleBracketLinks() throws {
+  let text = "t\ng\n- [x] old [other] /high\nother\n"
+  let (result, _) = try applied(
+    text, OutlineEditing.rename(text: text, model: parse(text), node: 1, to: "new"))
+  #expect(result == "t\ng\n- [x] new [other] /high\nother\n")
+  #expect(parse(result).resolvedLinks.count == 1)
+}

@@ -1,6 +1,6 @@
 // Renders a map to a PNG so agents can look at their visual work: the real frozen graph, drawn
 // offscreen by the app's own layer code with a fixed seed, fit to 1600×1000.
-// Usage: mindmap-preview --fixture <path.mindmap> --out <file.png> [--seed <n>]
+// Usage: mindmap-preview --fixture <path.mindmap> --out <file.png> [--seed <n>] [--font <family>]
 import CoreGraphics
 import CoreText
 import Foundation
@@ -22,15 +22,18 @@ func value(after flag: String, in args: [String]) -> String? {
 
 let args = CommandLine.arguments
 guard let fixture = value(after: "--fixture", in: args), let out = value(after: "--out", in: args)
-else { fail("usage: mindmap-preview --fixture <path.mindmap> --out <file.png> [--seed <n>]") }
+else {
+  fail(
+    "usage: mindmap-preview --fixture <path.mindmap> --out <file.png> [--seed <n>] [--font <family>]"
+  )
+}
 let seed = value(after: "--seed", in: args).flatMap(Int.init) ?? 7
 
-// The app registers the bundled font through ATSApplicationFontsPath; here, from the repo.
-let fontURL = URL(fileURLWithPath: #filePath)
-  .appendingPathComponent("../../../../../App/Fonts/NunitoSans.ttf").standardized
-if !CTFontManagerRegisterFontsForURL(fontURL as CFURL, .process, nil) {
-  fail("cannot register \(fontURL.path)")
-}
+let family = value(after: "--font", in: args) ?? GraphFonts.defaultFamily
+// The app registers bundled fonts from its Resources; here, from the repo.
+let fonts = URL(fileURLWithPath: #filePath).appendingPathComponent("../../../../../App/Fonts")
+  .standardized
+if !GraphFonts.register(family, in: fonts) { fail("cannot register \(family) from \(fonts.path)") }
 
 let text: String
 do { text = try String(contentsOfFile: fixture, encoding: .utf8) } catch {
@@ -42,7 +45,8 @@ let model = MapParser.parse(text: text, today: Date(), calendar: .current)
 let started = Date()
 let layout = await Task.detached(priority: .userInitiated) {
   ForceLayout.run(
-    model: model, seed: seed, today: Date(), calendar: .current, measure: GraphStyle.measure)
+    model: model, seed: seed, today: Date(), calendar: .current,
+    measure: GraphStyle.measure(family: family))
 }.value
 let elapsed = Date().timeIntervalSince(started) * 1000
 print(
@@ -51,6 +55,7 @@ print(
 
 let size = CGSize(width: 1600, height: 1000)
 let scene = GraphScene()
+scene.labelFamily = family
 scene.screenScale = 1
 scene.setSize(size)
 scene.setTitle((model.title.isEmpty ? "untitled map" : model.title).lowercased())

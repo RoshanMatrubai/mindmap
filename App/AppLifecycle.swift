@@ -8,7 +8,10 @@ final class AppLifecycle: NSObject, NSApplicationDelegate {
   /// ⌘+ (⇧⌘= or keypad +) also zooms in; a menu item can hold only one of ⌘= and ⌘+.
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-      guard event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "+" else {
+      // ⌥⌘= is Bigger Labels, so ⌥ excludes the event.
+      guard event.modifierFlags.contains(.command), !event.modifierFlags.contains(.option),
+        event.charactersIgnoringModifiers == "+"
+      else {
         return event
       }
       Self.store?.graphView?.zoomIn()

@@ -17,7 +17,7 @@ garden
     - borrow a hammer
 reading
 - finish the mystery novel /sunday
-- return library books [[errands]]
+- return library books [errands]
 errands
 - post office
 ```
@@ -31,7 +31,7 @@ errands
 | tab, then `- ` | a subtask (tab again to go deeper) |
 | `/today` `/tomorrow` `/friday` | due date |
 | `/high` `/medium` `/low` `/chill` | priority |
-| `[[name]]` | a dashed link to another task or group |
+| `[name]` | a dashed link to another task or group (`[[name]]` works too) |
 
 - click a group or task to highlight its branch and zoom in; its line is selected in the editor, and the panel under the map shows its details. click empty space to zoom back out. moving the cursor in the editor highlights that line's node too.
 - pinch or use the mouse wheel to zoom, two fingers to move around.
@@ -41,7 +41,8 @@ errands
 - press enter to continue a list, tab to indent, shift+tab to go back out. it works just like notes.
 - press ⌘N for a new map.
 - `/high` tasks can show up in the Calendar app. this is off by default; turn it on in settings (⌘,). (coming soon)
-- hit reshuffle (⇧⌘R) for a new animated layout. the forces panel is coming soon.
+- hit reshuffle (⇧⌘R) for a new animated layout.
+- change forces, fonts and sizes in settings (⌘,) or the forces panel (⌥⌘F).
 
 your maps are saved automatically as plain text files in a folder you choose the first time you open the app (we suggest Documents/mindmap, which keeps them private from other apps). nothing is ever saved inside this project folder.
 
@@ -57,11 +58,14 @@ your maps are saved automatically as plain text files in a folder you choose the
 | ⌘N | new map |
 | ⇧⌘] / ⇧⌘[ | next / previous map |
 | ⌘= (or ⌘+) / ⌘- | zoom in / out |
-| ⌘0 | fit the whole map |
+| ⌥⌘0 | fit the whole map |
 | ⇧⌘R | reshuffle (new layout, forgets moved nodes) |
 | arrow keys | move around the map (when the map has focus and nothing is selected) |
-| ⌘1 / ⌘2 | focus the editor / the map |
-| ⌥⌘1 / ⌥⌘2 / ⌥⌘3 / ⌥⌘4 / ⌥⌘0 | set the selected task's priority to high / medium / low / chill, or clear it |
+| ⌥⌘1 / ⌥⌘2 | focus the editor / the map |
+| ⌘1 / ⌘2 / ⌘3 / ⌘4 / ⌘0 | set the priority to high / medium / low / chill, or clear it: the selected node when the map has focus, otherwise the current or selected lines |
+| ⌥⌘= / ⌥⌘- | bigger / smaller labels on the map |
+| ⌥⌘F | show or hide the forces panel |
+| ⌘, | settings |
 
 when the map has focus and a node is selected:
 

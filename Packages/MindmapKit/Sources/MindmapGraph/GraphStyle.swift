@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import CoreText
 import Foundation
@@ -41,30 +42,42 @@ public enum GraphStyle {
       blue: CGFloat(hex & 255) / 255, alpha: alpha)
   }
 
-  /// Nunito Sans is registered from the app bundle (ATSApplicationFontsPath) or by the preview
-  /// tool. Its variable font defaults to ExtraLight, so ask for Regular (wght 400) explicitly.
-  public static func font(size: Double) -> CTFont {
+  /// A label font. Bundled families must be registered first (`GraphFonts.register`). Variable
+  /// fonts are asked for Regular (wght 400): Nunito Sans, for one, defaults to ExtraLight. Unknown
+  /// or unregistered families fall back to SF Pro.
+  public static func font(family: String = GraphFonts.defaultFamily, size: Double) -> CTFont {
+    let systemFont = CTFontCreateUIFontForLanguage(.system, size, nil)!
+    if family == GraphFonts.system { return systemFont }
+    if family == GraphFonts.systemRounded {
+      guard let rounded = NSFont.systemFont(ofSize: size).fontDescriptor.withDesign(.rounded),
+        let font = NSFont(descriptor: rounded, size: size)
+      else { return systemFont }
+      return font as CTFont
+    }
     let wght = 0x7767_6874  // 'wght'
     let descriptor = CTFontDescriptorCreateWithAttributes(
       [
-        kCTFontFamilyNameAttribute: "Nunito Sans",
+        kCTFontFamilyNameAttribute: GraphFonts.fontFamily(family),
         kCTFontVariationAttribute: [wght: 400],
       ] as CFDictionary)
     let font = CTFontCreateWithFontDescriptor(descriptor, size, nil)
-    guard CTFontCopyFamilyName(font) as String == "Nunito Sans" else {
-      return CTFontCreateUIFontForLanguage(.system, size, nil)!
-    }
-    return font
+    return CTFontCopyFamilyName(font) as String == GraphFonts.fontFamily(family) ? font : systemFont
   }
 
   /// Real label widths for the layout's collision boxes.
-  public static let measure: ForceLayout.Measure = { line, size in
-    Double(CTLineGetTypographicBounds(GraphStyle.line(line, size: size), nil, nil, nil))
+  public static func measure(family: String) -> ForceLayout.Measure {
+    { line, size in
+      Double(
+        CTLineGetTypographicBounds(
+          GraphStyle.line(line, family: family, size: size), nil, nil, nil))
+    }
   }
 
-  static func line(_ text: String, size: Double, color: CGColor? = nil) -> CTLine {
+  public static let measure = measure(family: GraphFonts.defaultFamily)
+
+  static func line(_ text: String, family: String, size: Double, color: CGColor? = nil) -> CTLine {
     var attributes: [NSAttributedString.Key: Any] = [
-      NSAttributedString.Key(kCTFontAttributeName as String): font(size: size)
+      NSAttributedString.Key(kCTFontAttributeName as String): font(family: family, size: size)
     ]
     if let color {
       attributes[NSAttributedString.Key(kCTForegroundColorAttributeName as String)] = color

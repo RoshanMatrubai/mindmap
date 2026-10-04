@@ -1,4 +1,5 @@
 import AppKit
+import MindmapCore
 import SwiftUI
 
 /// Every app menu command with a shortcut. The menu bar and the DEBUG smoke harness both run
@@ -8,10 +9,12 @@ enum AppCommand: CaseIterable {
   case newMap, nextMap, previousMap
   case toggleDone, indent, outdent, moveUp, moveDown
   case zoomIn, zoomOut, fitAll, reshuffle, focusEditor, focusGraph
+  case settings, toggleForcesPanel, biggerLabels, smallerLabels
   // Graph selection. Plain keys are enabled only while the graph has focus, so the editor keeps
   // Return, Tab, Delete, Esc and the arrows.
   case clearSelection, addTask, addSubtask, deleteNode
   case selectParent, selectFirstChild, selectPreviousSibling, selectNextSibling
+  // The selected node with the graph focused, else the editor's current or selected bullets.
   case priorityHigh, priorityMedium, priorityLow, priorityChill, priorityNone
 
   var title: String {
@@ -30,6 +33,10 @@ enum AppCommand: CaseIterable {
     case .reshuffle: "Reshuffle"
     case .focusEditor: "Focus Editor"
     case .focusGraph: "Focus Graph"
+    case .settings: "Settings…"
+    case .toggleForcesPanel: "Forces Panel"
+    case .biggerLabels: "Bigger Labels"
+    case .smallerLabels: "Smaller Labels"
     case .clearSelection: "Clear Selection"
     case .addTask: "Add Task"
     case .addSubtask: "Add Subtask"
@@ -58,10 +65,14 @@ enum AppCommand: CaseIterable {
     case .moveDown: KeyboardShortcut(.downArrow, modifiers: [.control, .command])
     case .zoomIn: KeyboardShortcut("=", modifiers: .command)
     case .zoomOut: KeyboardShortcut("-", modifiers: .command)
-    case .fitAll: KeyboardShortcut("0", modifiers: .command)
+    case .fitAll: KeyboardShortcut("0", modifiers: [.option, .command])
     case .reshuffle: KeyboardShortcut("r", modifiers: [.command, .shift])
-    case .focusEditor: KeyboardShortcut("1", modifiers: .command)
-    case .focusGraph: KeyboardShortcut("2", modifiers: .command)
+    case .focusEditor: KeyboardShortcut("1", modifiers: [.option, .command])
+    case .focusGraph: KeyboardShortcut("2", modifiers: [.option, .command])
+    case .settings: KeyboardShortcut(",", modifiers: .command)
+    case .toggleForcesPanel: KeyboardShortcut("f", modifiers: [.option, .command])
+    case .biggerLabels: KeyboardShortcut("=", modifiers: [.option, .command])
+    case .smallerLabels: KeyboardShortcut("-", modifiers: [.option, .command])
     case .clearSelection: KeyboardShortcut(.escape, modifiers: [])
     case .addTask: KeyboardShortcut(.return, modifiers: [])
     case .addSubtask: KeyboardShortcut(.tab, modifiers: [])
@@ -70,11 +81,11 @@ enum AppCommand: CaseIterable {
     case .selectFirstChild: KeyboardShortcut(.downArrow, modifiers: [])
     case .selectPreviousSibling: KeyboardShortcut(.leftArrow, modifiers: [])
     case .selectNextSibling: KeyboardShortcut(.rightArrow, modifiers: [])
-    case .priorityHigh: KeyboardShortcut("1", modifiers: [.option, .command])
-    case .priorityMedium: KeyboardShortcut("2", modifiers: [.option, .command])
-    case .priorityLow: KeyboardShortcut("3", modifiers: [.option, .command])
-    case .priorityChill: KeyboardShortcut("4", modifiers: [.option, .command])
-    case .priorityNone: KeyboardShortcut("0", modifiers: [.option, .command])
+    case .priorityHigh: KeyboardShortcut("1", modifiers: .command)
+    case .priorityMedium: KeyboardShortcut("2", modifiers: .command)
+    case .priorityLow: KeyboardShortcut("3", modifiers: .command)
+    case .priorityChill: KeyboardShortcut("4", modifiers: .command)
+    case .priorityNone: KeyboardShortcut("0", modifiers: .command)
     }
   }
 
@@ -87,7 +98,9 @@ enum AppCommand: CaseIterable {
       .selectPreviousSibling, .selectNextSibling:
       !store.graphFocused || store.detail == nil
     case .priorityHigh, .priorityMedium, .priorityLow, .priorityChill, .priorityNone:
-      store.detail == nil
+      store.graphFocused && store.detail == nil
+    case .biggerLabels: store.preferences.labelSize >= Preferences.labelSizeRange.upperBound
+    case .smallerLabels: store.preferences.labelSize <= Preferences.labelSizeRange.lowerBound
     default: false
     }
   }
@@ -110,6 +123,10 @@ enum AppCommand: CaseIterable {
     case .reshuffle: store.reshuffle()
     case .focusEditor: store.focusEditor()
     case .focusGraph: store.focusGraph()
+    case .settings: store.openSettings?()
+    case .toggleForcesPanel: store.preferences.showForcesPanel.toggle()
+    case .biggerLabels: store.preferences.stepLabelSize(by: 1)
+    case .smallerLabels: store.preferences.stepLabelSize(by: -1)
     case .clearSelection: store.graphView?.clearSelection()
     case .addTask: store.graphView?.addTask()
     case .addSubtask: store.graphView?.addSubtask()

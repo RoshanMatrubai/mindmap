@@ -13,6 +13,8 @@ struct GraphPane: NSViewRepresentable {
     view.onSelect = { index in store.graphSelected(index) }
     view.onEdit = { edit in store.applyGraphEdit(edit) }
     view.onFocus = { focused in store.graphFocused = focused }
+    view.onSettle = { alpha in store.settleChanged(alpha) }
+    view.scene.labelFamily = store.preferences.labelFont
     store.graphView = view
     return view
   }
@@ -25,6 +27,7 @@ struct GraphPane: NSViewRepresentable {
     }
     context.coordinator.generation = graph.generation
     view.onFirstFrame = { _ in store.graphShown(document: graph.documentID) }
+    if view.scene.labelFamily != graph.family { view.scene.labelFamily = graph.family }
     let title = graph.layout.model.title
     view.show(
       graph.simulation, title: (title.isEmpty ? "untitled map" : title).lowercased(),
@@ -36,6 +39,7 @@ struct GraphPane: NSViewRepresentable {
       DebugLaunch.zoomOnce(view)
       DebugLaunch.reshuffleOnce(store)
       DebugLaunch.selectOnce(view, store)
+      DebugLaunch.openSettingsOnce(store)
     #endif
   }
 

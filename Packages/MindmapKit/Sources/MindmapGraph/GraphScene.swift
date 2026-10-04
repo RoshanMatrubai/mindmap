@@ -36,7 +36,11 @@ public final class GraphScene {
   private var rasterTask: Task<Void, Never>?
   private var rasterGeneration = 0
   private var rasterKeys: [LabelRasterKey?] = []
-  private var fontNames: [Double: String] = [:]
+  private var fontNames: [String: String] = [:]
+  /// The label font family. Takes effect at the next `show` (labels need re-measured boxes).
+  public var labelFamily = GraphFonts.defaultFamily {
+    didSet { without { title.font = GraphStyle.font(family: labelFamily, size: 15) } }
+  }
   public private(set) var camera = Camera()
   public var screenScale: CGFloat = 2 {
     didSet {
@@ -67,7 +71,7 @@ public final class GraphScene {
     }
     root.addSublayer(world)
     // Prototype: 15 px, #636366, 10 from the top and 14 from the left. Never a node.
-    title.font = GraphStyle.font(size: 15)
+    title.font = GraphStyle.font(family: labelFamily, size: 15)
     title.fontSize = 15
     title.foregroundColor = GraphStyle.titleColor
     title.contentsScale = screenScale
@@ -144,7 +148,8 @@ public final class GraphScene {
     rasterTask?.cancel()
     without {
       for (i, layer) in nodeLayers.enumerated() {
-        layer.look = NodeLook(node: layout.nodes[i], source: layout.model.nodes[i])
+        layer.look = NodeLook(
+          node: layout.nodes[i], source: layout.model.nodes[i], family: labelFamily)
         layer.position = CGPoint(x: layout.nodes[i].x, y: layout.nodes[i].y)
       }
       order = layout.nodes.indices.sorted {
@@ -375,10 +380,12 @@ public final class GraphScene {
       // Nearby scales share a raster, avoiding a bitmap per tiny zoom adjustment.
       let scale = max(0.125, (screenScale * zoom * 8).rounded() / 8)
       guard let look = layer.look else { continue }
+      let fontKey = "\(look.family) \(look.fontSize)"
       let font =
-        fontNames[look.fontSize]
-        ?? (CTFontCopyPostScriptName(GraphStyle.font(size: look.fontSize)) as String)
-      fontNames[look.fontSize] = font
+        fontNames[fontKey]
+        ?? (CTFontCopyPostScriptName(GraphStyle.font(family: look.family, size: look.fontSize))
+          as String)
+      fontNames[fontKey] = font
       let key = LabelRasterKey(look: look, font: font, scale: scale)
       if rasterKeys[i] != key || !layer.hasRaster { requests.append((i, key)) }
     }

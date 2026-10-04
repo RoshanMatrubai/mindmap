@@ -11,14 +11,16 @@ struct NodeLook: Hashable, Sendable {
   var done: Bool
   var halfWidth: Double
   var down: Double
+  var family: String
 
-  init(node: GraphNode, source: MapNode) {
+  init(node: GraphNode, source: MapNode, family: String) {
     radius = node.radius
     fontSize = node.fontSize
     lines = node.lines
     done = source.done
     halfWidth = node.halfWidth
     down = node.down
+    self.family = family
   }
 }
 
@@ -150,11 +152,11 @@ enum NodeRaster {
 
   private static func draw(look: NodeLook, in ctx: CGContext, halo: Bool) {
     let color = halo ? GraphStyle.canvas : GraphStyle.cached(GraphStyle.brightLabel)
-    let font = GraphStyle.font(size: look.fontSize)
+    let font = GraphStyle.font(family: look.family, size: look.fontSize)
     ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
     ctx.setLineJoin(.round)
     for (i, text) in look.lines.enumerated() {
-      let line = GraphStyle.line(text, size: look.fontSize)
+      let line = GraphStyle.line(text, family: look.family, size: look.fontSize)
       let width = CTLineGetTypographicBounds(line, nil, nil, nil)
       // Prototype: first baseline at r + font size, then 1.2 em per line, centered.
       let origin = CGPoint(

@@ -24,6 +24,15 @@ struct DetailPanel: View {
     .frame(minHeight: 84, alignment: .topLeading)
     .background(color(0x1e1e1e))
     .overlay(alignment: .top) { Rectangle().fill(color(0x2a2a2a)).frame(height: 1) }
+    .overlay(alignment: .topTrailing) {
+      if let notice = store.notice {
+        Text(notice)
+          .font(.system(size: 11))
+          .foregroundStyle(color(0xc2a26a))
+          .padding(.horizontal, 16)
+          .padding(.top, 12)
+      }
+    }
   }
 
   private func content(_ detail: NodeDetail) -> some View {

@@ -34,7 +34,7 @@ public struct ResolvedLink: Sendable, Equatable {
 public struct UnresolvedLink: Sendable, Equatable {
   public var source: Int
   public var name: String
-  /// UTF-16 range of the complete [[link]] token in the original document.
+  /// UTF-16 range of the complete `[name]` or `[[name]]` token in the original document.
   public var sourceRange: NSRange
 }
 

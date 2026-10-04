@@ -17,13 +17,13 @@ kitchen
 - deep clean oven /sunday /medium
 	- soak racks
 	- wipe door
-- restock pantry [[market run]]
+- restock pantry [market run]
 market run
 - bread
 - apples
 - oat milk
 - coffee /tomorrow
-- batteries [[bike]]
+- batteries [bike]
 bike
 - pump tyres
 - oil chain /friday
@@ -36,7 +36,7 @@ workshop
 - build shelf /medium
 	- measure wall
 	- cut boards
-		- borrow saw [[fix the fence]]
+		- borrow saw [fix the fence]
 		- sand edges
 	- mount brackets
 - label drawers
@@ -46,8 +46,8 @@ book club
 - pick next month's book
 - host meeting /friday /medium
 	- send invites
-	- bake cookies [[kitchen]]
-- update reading list [[library]]
+	- bake cookies [kitchen]
+- update reading list [library]
 library
 - return overdue books /today /high
 - renew card
@@ -61,7 +61,7 @@ photography
 		- export jpegs
 - clean lens
 - print album /low
-- back up memory cards [[computer]]
+- back up memory cards [computer]
 computer
 - update the os
 - clear desktop
@@ -72,7 +72,7 @@ computer
 - unsubscribe from newsletters
 pets
 - vet checkup /wednesday /high
-- buy cat food [[market run]]
+- buy cat food [market run]
 - clean litter box
 - brush the dog
 - refill water fountain
@@ -89,7 +89,7 @@ fitness
 - swim twice a week
 	- find goggles
 	- check pool times
-- bike to work [[bike]]
+- bike to work [bike]
 - try a yoga class /chill
 music
 - learn a new chord
@@ -102,7 +102,7 @@ music
 friends
 - plan board game night /saturday
 	- pick games
-	- snacks [[market run]]
+	- snacks [market run]
 - reply to messages
 - send birthday card /wednesday /medium
 - call an old friend
@@ -114,14 +114,14 @@ travel
 		- chargers
 		- rain jacket
 - renew passport /high
-- learn basic phrases [[language]]
+- learn basic phrases [language]
 language
 - daily vocabulary
 - listen to a podcast
 - find a conversation partner
 - watch a film with subtitles /chill
 volunteering
-- community garden shift /sunday [[garden]]
+- community garden shift /sunday [garden]
 - sort donations
 - print flyers /low
 - help at the bake sale
@@ -131,7 +131,7 @@ home office
 - organize cables
 	- buy velcro ties
 	- label chargers
-- water the plants [[garden]]
+- water the plants [garden]
 - recycle old printer
 - side project /low
 	- sketch the idea
@@ -139,4 +139,4 @@ home office
 		- goals
 		- first milestone
 	- set up a notebook
-	- share with a friend [[friends]]
+	- share with a friend [friends]

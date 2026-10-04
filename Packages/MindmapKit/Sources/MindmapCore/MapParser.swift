@@ -122,7 +122,7 @@ public enum MapParser {
           }
         case .priority(let value): priority = value
         case .link:
-          let linkName = String(raw.dropFirst(2).dropLast(2))
+          let linkName = Self.linkName(raw)
           links.append(linkName)
           pending.append(
             (
@@ -233,17 +233,14 @@ public enum MapParser {
     if let range = parts.markerRange {
       result.append(MetadataToken(kind: .doneMarker, range: range))
     }
-    var index = parts.contentStart
+    // The done marker is `[ ]`, `[x]` or `[X]` right after the bullet, never a link.
+    var index = parts.markerRange.map(NSMaxRange) ?? parts.contentStart
     while index < units.count {
-      if units[index] == 91, index + 1 < units.count, units[index + 1] == 91 {
-        var end = index + 2
-        while end + 1 < units.count, !(units[end] == 93 && units[end + 1] == 93) { end += 1 }
-        if end + 1 < units.count {
-          result.append(
-            MetadataToken(kind: .link, range: NSRange(location: index, length: end + 2 - index)))
-          index = end + 2
-          continue
-        }
+      if units[index] == 91, let end = linkEnd(units, from: index) {
+        result.append(
+          MetadataToken(kind: .link, range: NSRange(location: index, length: end - index)))
+        index = end
+        continue
       }
       if units[index] == 47, index == 0 || whitespace(units[index - 1]) {
         var end = index + 1
@@ -268,6 +265,25 @@ public enum MapParser {
       }
     }
     return result
+  }
+
+  /// The end (exclusive) of a `[[name]]` or `[name]` link starting at `start`, or nil. The name
+  /// must not be blank, and a single-bracket name can't contain another bracket.
+  private static func linkEnd(_ units: [UInt16], from start: Int) -> Int? {
+    func named(_ range: Range<Int>) -> Bool { range.contains { !whitespace(units[$0]) } }
+    if start + 1 < units.count, units[start + 1] == 91 {
+      var end = start + 2
+      while end + 1 < units.count, !(units[end] == 93 && units[end + 1] == 93) { end += 1 }
+      return end + 1 < units.count && named(start + 2..<end) ? end + 2 : nil
+    }
+    var end = start + 1
+    while end < units.count, units[end] != 93, units[end] != 91 { end += 1 }
+    return end < units.count && units[end] == 93 && named(start + 1..<end) ? end + 1 : nil
+  }
+
+  private static func linkName(_ token: String) -> String {
+    let brackets = token.hasPrefix("[[") ? 2 : 1
+    return String(token.dropFirst(brackets).dropLast(brackets))
   }
 
   private struct SourceLine {
