@@ -179,7 +179,7 @@
         await settingsChecks(store, editor: editor, view: view, window: window)
         await reviewFixChecks(store, editor: editor, view: view, window: window)
         await displayLinkChecks(store, view: view, window: window)
-        await calendarChecks(store, editor: editor, view: view)
+        await reminderChecks(store, editor: editor, view: view)
         await timingChecks(store)
         await activationChecks(store, editor: editor)
         store.switchMap(original)
@@ -192,7 +192,7 @@
         else { return }
         if let created {
           try FileManager.default.removeItem(at: created)
-          try CalendarSidecar.remove(for: created)
+          try ReminderSidecar.remove(for: created)
           let sidecar = LayoutSidecar.url(for: created)
           if FileManager.default.fileExists(atPath: sidecar.path) {
             try FileManager.default.removeItem(at: sidecar)
@@ -203,78 +203,78 @@
       } catch { check(false, "app checks: \(error)") }
     }
 
-    private static func calendarChecks(
+    private static func reminderChecks(
       _ store: MapStore, editor: OutlineTextView, view: GraphView
     ) async {
-      guard !DebugLaunch.realCalendar, let folder = store.folder else {
-        check(false, "calendar smoke requires fake store")
+      guard !DebugLaunch.realReminders, let folder = store.folder else {
+        check(false, "reminders smoke requires fake store")
         return
       }
       let original = store.text
-      await store.calendarSync.drain()
-      if store.calendarSync.enabled {
-        store.calendarSync.setEnabled(false, in: folder)
-        store.calendarSync.confirmRemoval(in: folder)
-        await store.calendarSync.drain()
+      await store.reminderSync.drain()
+      if store.reminderSync.enabled {
+        store.reminderSync.setEnabled(false, in: folder)
+        store.reminderSync.confirmRemoval(in: folder)
+        await store.reminderSync.drain()
       }
       replace(
         editor,
-        with: (MapDocument.title(of: original) ?? "Calendar smoke")
-          + "\nGroup\n- Calendar task /today /high\n\t- [x] Finished child\n- Undated /high\n"
+        with: (MapDocument.title(of: original) ?? "Reminders smoke")
+          + "\nGroup\n- Reminders task /today /high\n\t- [x] Finished child\n- Undated /high\n"
       )
       guard await frozen(store) else { return }
       _ = await store.save()
-      menu(.settings, name: "Calendar Settings")
+      menu(.settings, name: "Reminders Settings")
       guard
         await wait(
-          "Calendar settings window opens",
+          "Reminders settings window opens",
           until: {
             DebugControls.settingsVisible && DebugControls.settingsTab != nil
           })
       else { return }
-      DebugControls.settingsTab?.wrappedValue = "calendar"
+      DebugControls.settingsTab?.wrappedValue = "reminders"
       guard
         await wait(
-          "Calendar switch rendered",
+          "Reminders switch rendered",
           until: {
-            DebugControls.calendarToggle != nil
+            DebugControls.remindersToggle != nil
           })
       else { return }
-      DebugControls.calendarToggle?.wrappedValue = true
-      await store.calendarSync.drain()
+      DebugControls.remindersToggle?.wrappedValue = true
+      await store.reminderSync.drain()
       check(
-        store.calendarSync.enabled && store.calendarSync.lastError == nil,
-        "Calendar settings switch enables fake sync")
-      guard let i = store.model.nodes.firstIndex(where: { $0.name == "Calendar task" }) else {
-        check(false, "calendar task exists")
+        store.reminderSync.enabled && store.reminderSync.lastError == nil,
+        "Reminders settings switch enables fake sync")
+      guard let i = store.model.nodes.firstIndex(where: { $0.name == "Reminders task" }) else {
+        check(false, "reminders task exists")
         return
       }
       view.select(i, camera: false)
       store.graphSelected(i)
       check(
-        store.calendarLine?.hasPrefix("on calendar: ") == true,
-        "selected high task detail shows calendar date")
-      let identifier = store.calendarSync.records.first { $0.event.title == "Calendar task" }?
+        store.reminderLine?.hasPrefix("in reminders: ") == true,
+        "selected high task detail shows reminder date")
+      let identifier = store.reminderSync.records.first { $0.reminder.title == "Reminders task" }?
         .identifier
       check(
         identifier != nil
-          && store.calendarSync.records.contains {
-            $0.event.notes.contains("- [x] Finished child")
-          }, "high task creates event with done subtask notes")
+          && store.reminderSync.records.contains {
+            $0.reminder.notes.contains("- [x] Finished child")
+          }, "high task creates reminder with done subtask notes")
       if let undated = store.model.nodes.firstIndex(where: { $0.name == "Undated" }) {
         view.select(undated, camera: false)
         store.graphSelected(undated)
-        check(store.calendarLine == "not on calendar: no date", "undated high task detail")
+        check(store.reminderLine == "in reminders: no date", "undated high task detail")
       }
       replace(
         editor,
         with: store.text.replacingOccurrences(
-          of: "Calendar task /today", with: "Renamed task /tomorrow"))
+          of: "Reminders task /today", with: "Renamed task /tomorrow"))
       guard await frozen(store) else { return }
       // Sync is queued after the graph update and autosave, so wait for its result.
-      _ = await wait("editing high task updates same fake event") {
-        store.calendarSync.records.contains {
-          $0.identifier == identifier && $0.event.title == "Renamed task"
+      _ = await wait("editing high task updates same fake reminder") {
+        store.reminderSync.records.contains {
+          $0.identifier == identifier && $0.reminder.title == "Renamed task"
         }
       }
       replace(
@@ -282,22 +282,22 @@
         with: store.text.replacingOccurrences(
           of: "Renamed task /tomorrow /high", with: "Renamed task /tomorrow"))
       guard await frozen(store) else { return }
-      _ = await wait("removing high removes fake calendar event") {
-        !store.calendarSync.records.contains { $0.identifier == identifier }
+      _ = await wait("removing high removes fake reminder") {
+        !store.reminderSync.records.contains { $0.identifier == identifier }
       }
-      await store.calendarSync.drain()
-      DebugControls.calendarToggle?.wrappedValue = false
+      await store.reminderSync.drain()
+      DebugControls.remindersToggle?.wrappedValue = false
       check(
-        store.calendarSync.confirmingRemoval && store.calendarSync.enabled,
+        store.reminderSync.confirmingRemoval && store.reminderSync.enabled,
         "turning sync off presents removal confirmation")
-      store.calendarSync.confirmingRemoval = false
-      check(store.calendarSync.enabled, "cancel keeps calendar sync enabled")
-      DebugControls.calendarToggle?.wrappedValue = false
-      store.calendarSync.confirmRemoval(in: folder)
-      await store.calendarSync.drain()
+      store.reminderSync.confirmingRemoval = false
+      check(store.reminderSync.enabled, "cancel keeps reminders sync enabled")
+      DebugControls.remindersToggle?.wrappedValue = false
+      store.reminderSync.confirmRemoval(in: folder)
+      await store.reminderSync.drain()
       check(
-        !store.calendarSync.enabled && store.calendarSync.records.isEmpty,
-        "confirmed sync off removes fake calendar and events")
+        !store.reminderSync.enabled && store.reminderSync.records.isEmpty,
+        "confirmed sync off removes fake list and reminders")
       NSApp.windows.first { $0 !== view.window && $0.isVisible }?.close()
       view.window?.makeKeyAndOrderFront(nil)
       store.focusEditor()

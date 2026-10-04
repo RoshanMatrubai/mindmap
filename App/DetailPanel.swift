@@ -87,7 +87,7 @@ struct DetailPanel: View {
         }
       }
       .padding(.top, 10)
-      if let line = store.calendarLine {
+      if let line = store.reminderLine {
         Text(line).font(.system(size: 11)).foregroundStyle(color(0x7f9cd1)).padding(.top, 6)
       }
     }

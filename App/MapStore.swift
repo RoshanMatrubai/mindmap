@@ -33,13 +33,13 @@ final class MapStore {
   private(set) var graph: GraphUpdate?
   /// The detail panel's content; nil without a selection.
   private(set) var detail: NodeDetail?
-  /// Calendar status is separate from graph layout and stays idle between sync triggers.
-  let calendarSync = CalendarSyncController()
+  /// Reminders status is separate from graph layout and stays idle between sync triggers.
+  let reminderSync = ReminderSyncController()
   @ObservationIgnored private var dayObserver: NSObjectProtocol?
 
-  var calendarLine: String? {
+  var reminderLine: String? {
     guard let detail, model.nodes.indices.contains(detail.index) else { return nil }
-    return calendarSync.line(for: model.nodes[detail.index], in: currentURL)
+    return reminderSync.line(for: model.nodes[detail.index], in: currentURL)
   }
 
   /// The graph view is first responder, so plain keys act on the graph.
@@ -107,7 +107,7 @@ final class MapStore {
       Task { @MainActor [weak self] in
         guard let self, let folder = self.folder else { return }
         self.scheduleParse(debounce: false)
-        self.calendarSync.sync(in: folder, open: nil, all: true)
+        self.reminderSync.sync(in: folder, open: nil, all: true)
       }
     }
     #if DEBUG
@@ -225,10 +225,10 @@ final class MapStore {
         reuseNodes: !restore && !fresh, generation: (graph?.generation ?? 0) + 1,
         documentID: identity, family: family)
       // After the graph update, so a save never delays drawing. Never sync a stale parse.
-      if calendarSync.enabled, let folder, await save(), documentID == identity,
+      if reminderSync.enabled, let folder, await save(), documentID == identity,
         text == snapshot, let url = currentURL
       {
-        calendarSync.sync(in: folder, open: (url, result))
+        reminderSync.sync(in: folder, open: (url, result))
       }
     }
   }
@@ -541,8 +541,8 @@ final class MapStore {
     let title = MapDocument.title(of: text) ?? "untitled map"
     guard await save(), documentID == identity else { return }
     do {
-      await calendarSync.beginFileChange()
-      defer { calendarSync.endFileChange(in: folder, map: currentURL) }
+      await reminderSync.beginFileChange()
+      defer { reminderSync.endFileChange(in: folder, map: currentURL) }
       guard documentID == identity else { return }
       let target = try await repository.rename(document: identity, title: title)
       guard documentID == identity else { return }
@@ -676,12 +676,12 @@ final class MapStore {
       }
       await rename()
       do {
-        await calendarSync.beginFileChange()
-        defer { calendarSync.endFileChange(in: folder, map: currentURL) }
+        await reminderSync.beginFileChange()
+        defer { reminderSync.endFileChange(in: folder, map: currentURL) }
         let bookmark = try url.bookmarkData(options: .withSecurityScope)
-        guard await calendarSync.relocate(to: url) else {
+        guard await reminderSync.relocate(to: url) else {
           if access { url.stopAccessingSecurityScopedResource() }
-          errorMessage = calendarSync.lastError
+          errorMessage = reminderSync.lastError
           return
         }
         UserDefaults.standard.set(bookmark, forKey: Self.bookmarkKey)
@@ -726,9 +726,9 @@ final class MapStore {
 
   private func use(_ url: URL) async {
     defer { isSwitching = false }
-    await calendarSync.drain()
+    await reminderSync.drain()
     folder = url
-    calendarSync.start(in: url)
+    reminderSync.start(in: url)
     do {
       maps = try await repository.list(url)
       let remembered = UserDefaults.standard.string(forKey: Self.lastMapKey)
@@ -750,7 +750,7 @@ final class MapStore {
     layoutSaveTask?.cancel()
     await saveLayout()
     let result = await save()
-    await calendarSync.drain()
+    await reminderSync.drain()
     if !result { isSwitching = false }
     return result
   }

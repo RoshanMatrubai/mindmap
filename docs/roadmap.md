@@ -9,7 +9,7 @@
 **3b. Interaction (done):** Selection, highlight, camera fit, editor↔graph sync, detail panel, add/rename/remove from the graph, arrow-key navigation, ⇧-drag for subtrees, priority shortcuts.
 
 **4. Settings (done):** Settings window, forces panel, all fonts with a picker, `[name]` links, priority keys on ⌘1–4 and ⌘0.
-5. Calendar integration for `/high` tasks, after settling its open decisions ([calendar.md](calendar.md)).
+**5. Reminders sync (done):** `/high` tasks become reminders in a dedicated Reminders list, due at a set time (6:30 AM by default) with an alarm, completed by `[x]`. Replaced the first Calendar version ([reminders.md](reminders.md)).
 6. Performance pass against the 500 node target, then the energy pass.
 
 ## Planned shortcuts

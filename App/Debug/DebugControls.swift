@@ -12,7 +12,7 @@
     static var panelVisible = false
     static var settingsVisible = false
     static var settingsTab: Binding<String>?
-    static var calendarToggle: Binding<Bool>?
+    static var remindersToggle: Binding<Bool>?
 
     static func record(_ key: String, _ binding: Binding<Double>) {
       sliders[key] = binding

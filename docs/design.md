@@ -1,6 +1,6 @@
 # Design
 
-The window has two panes. On the left is a plain text editor where you type a to-do list as an indented bullet outline, exactly the way you would in Apple Notes. On the right, that outline is drawn live as a force-directed graph in the style of Obsidian's graph view: groups are big black nodes, tasks and subtasks are smaller gray nodes, lines connect parents to children, and dashed curves connect cross-linked tasks. Clicking a group lights its whole branch in deep purple, dims everything else to about 30%, and zooms the camera to fit that branch. The graph settles once with a short physics animation, then freezes completely. High-priority tasks also appear in the macOS Calendar app.
+The window has two panes. On the left is a plain text editor where you type a to-do list as an indented bullet outline, exactly the way you would in Apple Notes. On the right, that outline is drawn live as a force-directed graph in the style of Obsidian's graph view: groups are big black nodes, tasks and subtasks are smaller gray nodes, lines connect parents to children, and dashed curves connect cross-linked tasks. Clicking a group lights its whole branch in deep purple, dims everything else to about 30%, and zooms the camera to fit that branch. The graph settles once with a short physics animation, then freezes completely. High-priority tasks also appear in the macOS Reminders app.
 
 The working browser prototype is [`prototype/mindmap-v6.html`](prototype/mindmap-v6.html); open it in Chrome or Safari. Every visual and interaction decision below was made by looking at it, so when these docs and the prototype disagree on a visual detail, the prototype wins. When they disagree on syntax, settings or architecture, these docs win, because those changed after the prototype was built. The prototype's sample text is made up; its `*` / `**` syntax is superseded by [syntax.md](syntax.md). It contains the exact colors, the simulation code and the selection logic. Its edges once failed to render inside a chat widget sandbox but render correctly as a standalone page; that was environmental and does not apply natively.
 
@@ -139,7 +139,7 @@ These appear in two places, a floating forces panel inside the graph pane (toggl
 | Font | Picker (below) | Re-measure labels, then the same local push-apart as label size |
 | Editor size | 11 to 18 pt, 13 | The editor's SF Mono size (Settings window only) |
 | Show forces panel | On / off, off | |
-| Calendar sync | On / off, off. Dedicated Calendar settings tab (see [calendar.md](calendar.md)) | Requests calendar access the first time it is turned on (step 5) |
+| Reminders sync | On / off, off, plus "remind at", 6:30 AM. Dedicated Reminders settings tab (see [reminders.md](reminders.md)) | Requests Reminders access the first time it is turned on (step 5) |
 
 "Auto reshuffle" means a fresh build with a new seed about 200 ms after the slider stops moving, so dragging doesn't restart the simulation every frame. It keeps pinned nodes; only ⇧⌘R (and the reshuffle buttons) clear pins.
 

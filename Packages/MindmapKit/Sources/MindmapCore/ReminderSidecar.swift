@@ -1,10 +1,13 @@
 import Foundation
 
-/// Event mappings and identity memory contain task names. This sidecar lives beside its map,
-/// never in UserDefaults or the settings container.
-public struct CalendarSidecar: Codable, Sendable, Equatable {
-  public var version = 1
-  public var eventIdentifiers: [String: String]
+/// Reminder mappings and identity memory contain task names. This sidecar lives beside its map,
+/// never in UserDefaults or the settings container. It keeps the `.calendar.json` name of the
+/// Calendar version; version 1 files from it load with their event identifiers dropped.
+public struct ReminderSidecar: Codable, Sendable, Equatable {
+  public var version = 2
+  public var reminderIdentifiers: [String: String]
+  /// Each high task's done state at the last sync, so completion is pushed only on change.
+  public var done: [String: Bool]
   public var mapFileName: String?
   private var identity: IdentityModel?
 
@@ -14,26 +17,30 @@ public struct CalendarSidecar: Codable, Sendable, Equatable {
   }
 
   public init(
-    eventIdentifiers: [String: String] = [:], previousModel: MapModel? = nil,
-    mapFileName: String? = nil
+    reminderIdentifiers: [String: String] = [:], done: [String: Bool] = [:],
+    previousModel: MapModel? = nil, mapFileName: String? = nil
   ) {
-    self.eventIdentifiers = eventIdentifiers
+    self.reminderIdentifiers = reminderIdentifiers
+    self.done = done
     self.mapFileName = mapFileName
     identity = previousModel.map(IdentityModel.init)
   }
 
   private enum CodingKeys: String, CodingKey {
-    case version, eventIdentifiers, mapFileName, identity
+    case version, reminderIdentifiers, done, mapFileName, identity
   }
 
   public init(from decoder: Decoder) throws {
     let values = try decoder.container(keyedBy: CodingKeys.self)
-    version = try values.decode(Int.self, forKey: .version)
-    guard version == 1 else {
+    let version = try values.decode(Int.self, forKey: .version)
+    guard version == 1 || version == 2 else {
       throw DecodingError.dataCorruptedError(
-        forKey: .version, in: values, debugDescription: "Unsupported calendar sidecar version")
+        forKey: .version, in: values, debugDescription: "Unsupported reminder sidecar version")
     }
-    eventIdentifiers = try values.decode([String: String].self, forKey: .eventIdentifiers)
+    // Version 1 held Calendar event identifiers, which never match a reminder.
+    reminderIdentifiers =
+      try values.decodeIfPresent([String: String].self, forKey: .reminderIdentifiers) ?? [:]
+    done = try values.decodeIfPresent([String: Bool].self, forKey: .done) ?? [:]
     mapFileName = try values.decodeIfPresent(String.self, forKey: .mapFileName)
     identity = try values.decodeIfPresent(IdentityModel.self, forKey: .identity)
     if let nodes = identity?.nodes {
@@ -43,7 +50,7 @@ public struct CalendarSidecar: Codable, Sendable, Equatable {
         })
       else {
         throw DecodingError.dataCorruptedError(
-          forKey: .identity, in: values, debugDescription: "Invalid calendar identity tree")
+          forKey: .identity, in: values, debugDescription: "Invalid reminder identity tree")
       }
     }
   }
@@ -53,7 +60,7 @@ public struct CalendarSidecar: Codable, Sendable, Equatable {
       "." + map.lastPathComponent + ".calendar.json")
   }
 
-  public static func load(for map: URL) -> CalendarSidecar? {
+  public static func load(for map: URL) -> ReminderSidecar? {
     guard let data = try? Data(contentsOf: url(for: map)) else { return nil }
     return try? JSONDecoder().decode(Self.self, from: data)
   }

@@ -41,7 +41,7 @@ User data never lives in the repo, and agents never touch the real user's data. 
 
 ## Never
 
-- Never read, list or open `~/Library/Containers/io.github.roshanmatrubai.mindmap`, `~/Library/Application Scripts/io.github.roshanmatrubai.mindmap`, or the user's Calendar data (`~/Library/Calendars`, EventKit on the user's account).
+- Never read, list or open `~/Library/Containers/io.github.roshanmatrubai.mindmap`, `~/Library/Application Scripts/io.github.roshanmatrubai.mindmap`, or the user's Calendar or Reminders data (`~/Library/Calendars`, `~/Library/Group Containers/group.com.apple.reminders`, EventKit on the user's account).
 - Never read, list or search `~/Documents`, `~/Desktop`, `~/Downloads` or `~/Library/Mobile Documents` (iCloud Drive). If a command triggers a macOS "would like to access files" prompt, stop and tell the user; they will click Don't Allow.
 - Never run disk-wide or home-wide searches (find /, find ~, grep -r ~, mdfind without -onlyin). Scope every search to the repo, the build folder, or a specific system path like /Applications/Xcode.app.
 - Never touch the release container: no command may mention `~/Library/Containers/io.github.roshanmatrubai.mindmap` (the `.dev` one is fine).
@@ -68,6 +68,6 @@ Energy rules: no `Timer` except the one at local midnight; no polling; nothing a
 
 - `docs/syntax.md`: the text format. `docs/design.md`: visuals, interaction, force layout, settings, fonts, rejected ideas.
 - `docs/architecture.md`: repo layout and recommended architecture. `docs/roadmap.md`: build order.
-- `docs/calendar.md`: calendar sync. `docs/decisions/`: why things are set up the way they are.
+- `docs/reminders.md`: Reminders sync. `docs/decisions/`: why things are set up the way they are.
 - `docs/prototype/mindmap-v6.html`: the browser prototype. It wins on visual details; the docs win on syntax, settings, architecture.
 - Swift 6 language mode, macOS 14 deployment target, Swift Testing (`import Testing`), no snapshot tests.

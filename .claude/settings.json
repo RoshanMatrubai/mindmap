@@ -5,6 +5,7 @@
       "Read(~/Library/Containers/io.github.roshanmatrubai.mindmap/**)",
       "Read(~/Library/Application Scripts/io.github.roshanmatrubai.mindmap/**)",
       "Read(~/Library/Calendars/**)",
+      "Read(~/Library/Group Containers/group.com.apple.reminders/**)",
       "Read(~/Documents/**)",
       "Read(~/Desktop/**)",
       "Read(~/Downloads/**)",

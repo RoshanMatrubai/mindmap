@@ -41,7 +41,7 @@ errands
 - drag a node to move it; crowded neighbors move aside. hold shift while dragging to bring its subtasks along. it stays where you put it until you reshuffle (⇧⌘R).
 - press enter to continue a list, tab to indent, shift+tab to go back out. it works just like notes.
 - press ⌘N for a new map.
-- turn on calendar sync in settings to see /high tasks in the Calendar app
+- turn on reminders sync in settings to get /high tasks in the Reminders app at 6:30 am
 - hit reshuffle (⇧⌘R) for a new animated layout.
 - change forces, fonts and sizes in settings (⌘,) or the forces panel (⌥⌘F).
 

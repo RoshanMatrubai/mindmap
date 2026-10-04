@@ -11,7 +11,7 @@ struct SettingsView: View {
   private static var initialTab: String {
     #if DEBUG
       if let requested = DebugLaunch.settingsTab?.lowercased(),
-        ["text", "calendar"].contains(requested)
+        ["text", "reminders"].contains(requested)
       {
         return requested
       }
@@ -25,7 +25,7 @@ struct SettingsView: View {
         .tag("graph")
       text.tabItem { Label("Text", systemImage: "textformat") }
         .tag("text")
-      calendar.tabItem { Label("Calendar", systemImage: "calendar") }.tag("calendar")
+      reminders.tabItem { Label("Reminders", systemImage: "checklist") }.tag("reminders")
     }
     .frame(width: 480)
     .preferredColorScheme(.dark)
@@ -38,38 +38,55 @@ struct SettingsView: View {
     #endif
   }
 
-  private var calendarBinding: Binding<Bool> {
+  private var remindersBinding: Binding<Bool> {
     let binding = Binding(
-      get: { store.calendarSync.enabled },
+      get: { store.reminderSync.enabled },
       set: { value in
-        if let folder = store.folder { store.calendarSync.setEnabled(value, in: folder) }
+        if let folder = store.folder { store.reminderSync.setEnabled(value, in: folder) }
       })
     #if DEBUG
-      DebugControls.calendarToggle = binding
+      DebugControls.remindersToggle = binding
     #endif
     return binding
   }
 
-  private var calendar: some View {
+  /// Today at the setting's time; only the hour and minute matter.
+  private var remindAtBinding: Binding<Date> {
+    let calendar = Calendar.current
+    return Binding(
+      get: {
+        let minutes = store.reminderSync.remindAt
+        return calendar.date(
+          bySettingHour: minutes / 60, minute: minutes % 60, second: 0, of: Date()) ?? Date()
+      },
+      set: { date in
+        let time = calendar.dateComponents([.hour, .minute], from: date)
+        store.reminderSync.setRemindAt(
+          (time.hour ?? 0) * 60 + (time.minute ?? 0), in: store.folder)
+      })
+  }
+
+  private var reminders: some View {
     Form {
       Section {
-        Toggle("Calendar sync", isOn: calendarBinding)
-          .disabled(store.folder == nil || store.calendarSync.busy)
-        Text(store.calendarSync.status).font(.callout).foregroundStyle(.secondary)
-        if store.calendarSync.access == .denied {
-          Button("Open Calendar Privacy Settings") { store.calendarSync.openPrivacySettings() }
+        Toggle("Reminders sync", isOn: remindersBinding)
+          .disabled(store.folder == nil || store.reminderSync.busy)
+        DatePicker("Remind at", selection: remindAtBinding, displayedComponents: .hourAndMinute)
+        Text(store.reminderSync.status).font(.callout).foregroundStyle(.secondary)
+        if store.reminderSync.access == .denied {
+          Button("Open Reminders Privacy Settings") { store.reminderSync.openPrivacySettings() }
         }
       }
     }
     .formStyle(.grouped)
     .confirmationDialog(
-      store.calendarSync.removalMessage,
+      store.reminderSync.removalMessage,
       isPresented: Binding(
-        get: { store.calendarSync.confirmingRemoval },
-        set: { store.calendarSync.confirmingRemoval = $0 }), titleVisibility: .visible
+        get: { store.reminderSync.confirmingRemoval },
+        set: { store.reminderSync.confirmingRemoval = $0 }), titleVisibility: .visible
     ) {
-      Button("Remove Calendar", role: .destructive) {
-        if let folder = store.folder { store.calendarSync.confirmRemoval(in: folder) }
+      Button("Remove List", role: .destructive) {
+        if let folder = store.folder { store.reminderSync.confirmRemoval(in: folder) }
       }
       Button("Cancel", role: .cancel) {}
     }
