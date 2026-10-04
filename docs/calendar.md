@@ -1,27 +1,29 @@
 # Calendar integration
 
-High-priority tasks also appear in the native macOS Calendar app through EventKit. No third-party services and no network.
+Open tasks marked `/high` with a due date appear as all-day events in the native macOS Calendar app through EventKit. Sync is one-way, from the map to Calendar. It uses no network or third-party services, no Reminders and no alerts. Sync is off by default.
 
-## Settled
+## Hard rule for agents
 
-- Only tasks marked `/high` sync. Everything else stays in the app.
-- Sync is driven by the text. Adding `/high` to a task creates its event; removing `/high`, deleting the task, or marking it done removes or completes the event; editing the task text or due date updates the event.
-- Events go into a dedicated calendar the app creates (working name "Mindmap"), so they can be toggled together in Calendar and the app never touches other calendars.
-- Each synced task stores its event identifier in app data (outside the repo, not in the visible text), so edits map to the right event.
-- Sync runs on the same debounced parse that rebuilds the graph, off the main thread. No polling; listen for `EKEventStoreChanged` only if two-way sync is chosen.
-- Calendar sync is off by default and requests calendar access the first time it is turned on (see the Settings table in [design.md](design.md)).
+Agents must never request Calendar access, run the real store, read or change real events, or trigger the macOS Calendar permission prompt. Unit tests and the native smoke harness use the in-memory `FakeCalendarStore`. Debug builds use it by default. Only the owner may launch the dev app with `-real-calendar YES`; that uses a calendar named `mindmap dev`, never `mindmap`. Release uses `mindmap`.
 
-## Open decisions (decide with the user before building)
+All calendar operations go through `CalendarStore`. The real store may list calendars to locate its own calendar, but every event query and mutation is restricted to that calendar. It never enumerates events in other calendars or looks up event identifiers globally. A same-name calendar is not evidence of ownership: the adapter saves the identifier of the calendar it created and does not adopt somebody else's calendar.
 
-| Decision | Options to present |
-|---|---|
-| Access level | Write-only access (less intrusive, can't read events back) vs full access (needed for updates, removal and two-way sync), requested only when sync is first turned on |
-| Event shape | All-day event on the due date vs a timed block, and if timed, default time and length |
-| `/high` tasks with no due date | Skip, put on today, or put on the next free slot |
-| Direction | One-way (app to Calendar) vs two-way (moving the event rewrites the due date in the text) |
-| Calendar vs Reminders | Calendar events, Reminders (native completion), or both |
-| Alerts | None, or an alert some time before |
-| Subtasks of a high-priority task | Separate events, folded into the event notes, or ignored |
-| Settings surface | Which of these become user settings and which are fixed |
+## Decisions
 
-The calendar entitlement is not in the project yet; add it in this step (see [decisions/0001-dev-environment.md](decisions/0001-dev-environment.md)).
+Full Calendar access (`requestFullAccessToEvents`) is requested only when the user first turns sync on. The app includes `NSCalendarsFullAccessUsageDescription` and the sandbox entitlement `com.apple.security.personal-information.calendars`. Launch and automatic sync check the access state without requesting it. Denial appears in the Calendar tab with a button to System Settings > Privacy & Security > Calendars.
+
+Each event's title is the task name as typed. Its notes contain the `map › group › task` path, a blank line, then its subtasks, with done ones marked. Events have no alarms. A `/high` task without a due date has no event and its detail panel says `not on calendar: no date`. A selected synced task says `on calendar: <date>`; errors appear in the detail panel and settings status.
+
+Removing `/high`, deleting a task or marking it done removes its event. Changing its name, level or due date updates the existing event. Node identity uses the same path, sibling rename and same-name move matching as graph layout. Relative due dates are recomputed from today's date using the parser's rules, including weekdays counting today. After a weekday passes, its event moves to the next occurrence.
+
+The app creates its dedicated calendar on first sync, in the source of the default calendar for new events. If an expected event is missing, the next run recreates it. If the owned calendar is deleted, the next run recreates it. Calendar edits never change map text.
+
+Turning sync off presents `Remove the mindmap calendar and its N events?` (the dev calendar is named `mindmap dev`). Cancel preserves sync. Confirm removes the app's calendar and its events, then disables sync. Settings has a Calendar tab with the switch and a status line showing access, synced event count and last error.
+
+## Storage and triggers
+
+Sensitive mappings live next to each map in `.<map file name>.calendar.json`, never in the settings container. The sidecar records node path keys, event identifiers and the previous identity tree; it follows map renames like the layout sidecar. Every event also has `mindmap://<url-encoded map file name>/<url-encoded path key>` in its URL so changed event identifiers can be recovered inside the dedicated calendar. Calendar ownership and event date scan bounds live in `.calendar-store.json` in the maps folder. Only the non-sensitive sync preference lives in UserDefaults. See [0002](decisions/0002-data-protection.md).
+
+The pure `MindmapCore` planner takes parsed maps, current event records and today, and returns create, update and delete operations. The app's serial worker parses files, applies operations through the store and saves sidecars off the main thread. After each debounced parse, it syncs only the open map. At launch, enable and `NSCalendarDayChanged`, it syncs every map in the folder and removes events tagged with maps that no longer exist. There is no polling, Timer or `EKEventStoreChanged` observer.
+
+Real EventKit execution remains owner-only. Agents verify the fake store, pure planner, app UI and compiled adapter without accessing Calendar.

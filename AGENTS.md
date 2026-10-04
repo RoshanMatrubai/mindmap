@@ -10,6 +10,7 @@ Rules for every coding agent working in this repo. Read this first; details live
 | `make lint` | `swift format lint --strict` (`make format` fixes it) |
 | `make build` | Debug build (`make build CONFIG=Release` for Release) |
 | `make preview` | Renders the sample fixture to `build/preview.png` |
+| `make icon` | Regenerates the app icons (`App/AppIcon.icon`, `App/Debug/AppIcon-dev.icon`) from `scripts/make-icon.swift` |
 | `make run` | Quits and relaunches "mindmap dev" (`ARGS="-fixture sample"` passes launch arguments) |
 | `make stop` | Quits "mindmap dev" |
 | `make screenshot` | Captures only the "mindmap dev" window to `build/screenshot.png` |
@@ -42,6 +43,7 @@ User data never lives in the repo, and agents never touch the real user's data. 
 
 - Never read, list or open `~/Library/Containers/io.github.roshanmatrubai.mindmap`, `~/Library/Application Scripts/io.github.roshanmatrubai.mindmap`, or the user's Calendar data (`~/Library/Calendars`, EventKit on the user's account).
 - Never read, list or search `~/Documents`, `~/Desktop`, `~/Downloads` or `~/Library/Mobile Documents` (iCloud Drive). If a command triggers a macOS "would like to access files" prompt, stop and tell the user; they will click Don't Allow.
+- Never run disk-wide or home-wide searches (find /, find ~, grep -r ~, mdfind without -onlyin). Scope every search to the repo, the build folder, or a specific system path like /Applications/Xcode.app.
 - Never touch the release container: no command may mention `~/Library/Containers/io.github.roshanmatrubai.mindmap` (the `.dev` one is fine).
 - Never launch the Release build (`make install`, `/Applications/mindmap.app`).
 - Never run `make check-isolation`; it's for the user.

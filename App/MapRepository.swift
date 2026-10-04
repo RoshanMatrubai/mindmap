@@ -75,6 +75,16 @@ actor MapRepository {
       title: title, in: url.deletingLastPathComponent(), excluding: url)
     if target != url {
       try FileManager.default.moveItem(at: url, to: target)
+      do { try CalendarSidecar.move(from: url, to: target) } catch {
+        log.error("calendar sidecar rename failed")
+        // Keep actor-owned document identity valid when the sidecar cannot follow the map.
+        do { try FileManager.default.moveItem(at: target, to: url) } catch {
+          // A failed rollback must still leave autosave targeting the map that exists.
+          for (id, documentURL) in documents where documentURL == url { documents[id] = target }
+          throw error
+        }
+        throw error
+      }
       // The layout sidecar follows its map; losing it only costs the remembered layout.
       do { try LayoutSidecar.move(from: url, to: target) } catch {
         log.error("layout sidecar rename failed: \(error, privacy: .public)")

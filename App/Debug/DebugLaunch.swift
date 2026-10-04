@@ -5,7 +5,17 @@
   /// DEBUG-only launch arguments for the agent debug loop (AGENTS.md). Excluded from Release builds.
   enum DebugLaunch {
     /// Fixtures and native smoke checks start with fresh window state, including after a crash.
+    static var realCalendar: Bool {
+      let args = CommandLine.arguments
+      return args.indices.contains { index in
+        args[index] == "-real-calendar" && index + 1 < args.count && args[index + 1] == "YES"
+      }
+    }
+
     static func configure() {
+      precondition(
+        !realCalendar || !UserDefaults.standard.bool(forKey: "editor-smoke"),
+        "The smoke harness must never run with real Calendar access.")
       if UserDefaults.standard.string(forKey: "fixture") != nil
         || UserDefaults.standard.bool(forKey: "editor-smoke")
       {
@@ -79,7 +89,7 @@
     }
     @MainActor private static var reshuffled = false
 
-    /// `-open-settings Text` opens the Settings window on that tab ("Graph" or "Text") once the
+    /// `-open-settings Text` opens the Settings window on that tab ("Graph", "Text" or "Calendar") once the
     /// first graph is shown. For screenshots.
     static var settingsTab: String? { UserDefaults.standard.string(forKey: "open-settings") }
 

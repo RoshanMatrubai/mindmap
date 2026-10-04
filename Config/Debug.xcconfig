@@ -5,6 +5,8 @@
 PRODUCT_BUNDLE_IDENTIFIER = io.github.roshanmatrubai.mindmap.dev
 PRODUCT_NAME = mindmap dev
 INFOPLIST_KEY_CFBundleDisplayName = mindmap dev
+// Same icon with an orange badge, so the dev app is easy to tell apart in the Dock. Run `make icon` to regenerate.
+ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon-dev
 
 SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG
 SWIFT_OPTIMIZATION_LEVEL = -Onone

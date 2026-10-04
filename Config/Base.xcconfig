@@ -9,6 +9,7 @@ MARKETING_VERSION = 0.1.0
 CURRENT_PROJECT_VERSION = 1
 
 GENERATE_INFOPLIST_FILE = YES
+INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = Sync dated high priority tasks to the mindmap calendar.
 INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.productivity
 INFOPLIST_KEY_NSHumanReadableCopyright = Copyright © 2026 Roshan Matrubai. MIT License.
 

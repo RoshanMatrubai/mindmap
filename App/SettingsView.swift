@@ -10,7 +10,11 @@ struct SettingsView: View {
 
   private static var initialTab: String {
     #if DEBUG
-      if DebugLaunch.settingsTab?.lowercased() == "text" { return "text" }
+      if let requested = DebugLaunch.settingsTab?.lowercased(),
+        ["text", "calendar"].contains(requested)
+      {
+        return requested
+      }
     #endif
     return "graph"
   }
@@ -21,13 +25,54 @@ struct SettingsView: View {
         .tag("graph")
       text.tabItem { Label("Text", systemImage: "textformat") }
         .tag("text")
+      calendar.tabItem { Label("Calendar", systemImage: "calendar") }.tag("calendar")
     }
     .frame(width: 480)
     .preferredColorScheme(.dark)
     #if DEBUG
-      .onAppear { DebugControls.settingsVisible = true }
+      .onAppear {
+        DebugControls.settingsVisible = true
+        DebugControls.settingsTab = $tab
+      }
       .onDisappear { DebugControls.settingsVisible = false }
     #endif
+  }
+
+  private var calendarBinding: Binding<Bool> {
+    let binding = Binding(
+      get: { store.calendarSync.enabled },
+      set: { value in
+        if let folder = store.folder { store.calendarSync.setEnabled(value, in: folder) }
+      })
+    #if DEBUG
+      DebugControls.calendarToggle = binding
+    #endif
+    return binding
+  }
+
+  private var calendar: some View {
+    Form {
+      Section {
+        Toggle("Calendar sync", isOn: calendarBinding)
+          .disabled(store.folder == nil || store.calendarSync.busy)
+        Text(store.calendarSync.status).font(.callout).foregroundStyle(.secondary)
+        if store.calendarSync.access == .denied {
+          Button("Open Calendar Privacy Settings") { store.calendarSync.openPrivacySettings() }
+        }
+      }
+    }
+    .formStyle(.grouped)
+    .confirmationDialog(
+      store.calendarSync.removalMessage,
+      isPresented: Binding(
+        get: { store.calendarSync.confirmingRemoval },
+        set: { store.calendarSync.confirmingRemoval = $0 }), titleVisibility: .visible
+    ) {
+      Button("Remove Calendar", role: .destructive) {
+        if let folder = store.folder { store.calendarSync.confirmRemoval(in: folder) }
+      }
+      Button("Cancel", role: .cancel) {}
+    }
   }
 
   private var graph: some View {

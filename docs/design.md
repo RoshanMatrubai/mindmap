@@ -139,7 +139,7 @@ These appear in two places, a floating forces panel inside the graph pane (toggl
 | Font | Picker (below) | Re-measure labels, then the same local push-apart as label size |
 | Editor size | 11 to 18 pt, 13 | The editor's SF Mono size (Settings window only) |
 | Show forces panel | On / off, off | |
-| Calendar sync | On / off, off. Further options decided with the user (see [calendar.md](calendar.md)) | Requests calendar access the first time it is turned on (step 5) |
+| Calendar sync | On / off, off. Dedicated Calendar settings tab (see [calendar.md](calendar.md)) | Requests calendar access the first time it is turned on (step 5) |
 
 "Auto reshuffle" means a fresh build with a new seed about 200 ms after the slider stops moving, so dragging doesn't restart the simulation every frame. It keeps pinned nodes; only ⇧⌘R (and the reshuffle buttons) clear pins.
 
@@ -190,6 +190,14 @@ Registration is lazy: launch registers only the selected family, off the main th
 | Geometric | Outfit, Manrope, Poppins, Urbanist, Plus Jakarta Sans, DM Sans, Work Sans, Onest, Golos Text, Commissioner, Be Vietnam Pro, Hanken Grotesk, Kumbh Sans |
 
 Verify each license and family name when downloading; drop any that turn out not to be OFL. Add each bundled font to [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md). The editor uses SF Mono by default so indentation is unambiguous.
+
+## App icon
+
+A paper map folded in three on the graphite canvas, with the graph drawn across it: one near-black group with gray tasks, a dashed cross link and one branch lit in the selection purple. No text.
+
+- Format: Icon Composer `.icon` bundles, so macOS 26+ draws it natively with Liquid Glass instead of shrinking a legacy icon onto a gray plate. The graph layers get glass, the folded map stays flat. Xcode also compiles an `.icns` fallback for macOS 14 and 15.
+- Release uses `App/AppIcon.icon`. Debug ("mindmap dev") uses `App/Debug/AppIcon-dev.icon`, the same icon with an orange disc in the top-right corner. Each is chosen by `ASSETCATALOG_COMPILER_APPICON_NAME` in `Config/Debug.xcconfig` and `Config/Release.xcconfig`. With the Clear or Tinted icon styles the orange turns gray, but the disc still shows.
+- Both bundles are generated from code: `make icon` runs `scripts/make-icon.swift` (CoreGraphics), which writes the layer PNGs and `icon.json`. Edit the script and rerun it rather than editing the bundles by hand.
 
 ## Tried and rejected
 

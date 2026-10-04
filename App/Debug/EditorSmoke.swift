@@ -179,6 +179,7 @@
         await settingsChecks(store, editor: editor, view: view, window: window)
         await reviewFixChecks(store, editor: editor, view: view, window: window)
         await displayLinkChecks(store, view: view, window: window)
+        await calendarChecks(store, editor: editor, view: view)
         await timingChecks(store)
         await activationChecks(store, editor: editor)
         store.switchMap(original)
@@ -191,6 +192,7 @@
         else { return }
         if let created {
           try FileManager.default.removeItem(at: created)
+          try CalendarSidecar.remove(for: created)
           let sidecar = LayoutSidecar.url(for: created)
           if FileManager.default.fileExists(atPath: sidecar.path) {
             try FileManager.default.removeItem(at: sidecar)
@@ -199,6 +201,108 @@
         store.activated()
         check(true, "smoke maps cleaned and original map restored")
       } catch { check(false, "app checks: \(error)") }
+    }
+
+    private static func calendarChecks(
+      _ store: MapStore, editor: OutlineTextView, view: GraphView
+    ) async {
+      guard !DebugLaunch.realCalendar, let folder = store.folder else {
+        check(false, "calendar smoke requires fake store")
+        return
+      }
+      let original = store.text
+      await store.calendarSync.drain()
+      if store.calendarSync.enabled {
+        store.calendarSync.setEnabled(false, in: folder)
+        store.calendarSync.confirmRemoval(in: folder)
+        await store.calendarSync.drain()
+      }
+      replace(
+        editor,
+        with: (MapDocument.title(of: original) ?? "Calendar smoke")
+          + "\nGroup\n- Calendar task /today /high\n\t- [x] Finished child\n- Undated /high\n"
+      )
+      guard await frozen(store) else { return }
+      _ = await store.save()
+      menu(.settings, name: "Calendar Settings")
+      guard
+        await wait(
+          "Calendar settings window opens",
+          until: {
+            DebugControls.settingsVisible && DebugControls.settingsTab != nil
+          })
+      else { return }
+      DebugControls.settingsTab?.wrappedValue = "calendar"
+      guard
+        await wait(
+          "Calendar switch rendered",
+          until: {
+            DebugControls.calendarToggle != nil
+          })
+      else { return }
+      DebugControls.calendarToggle?.wrappedValue = true
+      await store.calendarSync.drain()
+      check(
+        store.calendarSync.enabled && store.calendarSync.lastError == nil,
+        "Calendar settings switch enables fake sync")
+      guard let i = store.model.nodes.firstIndex(where: { $0.name == "Calendar task" }) else {
+        check(false, "calendar task exists")
+        return
+      }
+      view.select(i, camera: false)
+      store.graphSelected(i)
+      check(
+        store.calendarLine?.hasPrefix("on calendar: ") == true,
+        "selected high task detail shows calendar date")
+      let identifier = store.calendarSync.records.first { $0.event.title == "Calendar task" }?
+        .identifier
+      check(
+        identifier != nil
+          && store.calendarSync.records.contains {
+            $0.event.notes.contains("- [x] Finished child")
+          }, "high task creates event with done subtask notes")
+      if let undated = store.model.nodes.firstIndex(where: { $0.name == "Undated" }) {
+        view.select(undated, camera: false)
+        store.graphSelected(undated)
+        check(store.calendarLine == "not on calendar: no date", "undated high task detail")
+      }
+      replace(
+        editor,
+        with: store.text.replacingOccurrences(
+          of: "Calendar task /today", with: "Renamed task /tomorrow"))
+      guard await frozen(store) else { return }
+      // Sync is queued after the graph update and autosave, so wait for its result.
+      _ = await wait("editing high task updates same fake event") {
+        store.calendarSync.records.contains {
+          $0.identifier == identifier && $0.event.title == "Renamed task"
+        }
+      }
+      replace(
+        editor,
+        with: store.text.replacingOccurrences(
+          of: "Renamed task /tomorrow /high", with: "Renamed task /tomorrow"))
+      guard await frozen(store) else { return }
+      _ = await wait("removing high removes fake calendar event") {
+        !store.calendarSync.records.contains { $0.identifier == identifier }
+      }
+      await store.calendarSync.drain()
+      DebugControls.calendarToggle?.wrappedValue = false
+      check(
+        store.calendarSync.confirmingRemoval && store.calendarSync.enabled,
+        "turning sync off presents removal confirmation")
+      store.calendarSync.confirmingRemoval = false
+      check(store.calendarSync.enabled, "cancel keeps calendar sync enabled")
+      DebugControls.calendarToggle?.wrappedValue = false
+      store.calendarSync.confirmRemoval(in: folder)
+      await store.calendarSync.drain()
+      check(
+        !store.calendarSync.enabled && store.calendarSync.records.isEmpty,
+        "confirmed sync off removes fake calendar and events")
+      NSApp.windows.first { $0 !== view.window && $0.isVisible }?.close()
+      view.window?.makeKeyAndOrderFront(nil)
+      store.focusEditor()
+      replace(editor, with: original)
+      _ = await frozen(store)
     }
 
     private static func replace(_ editor: OutlineTextView, with text: String) {

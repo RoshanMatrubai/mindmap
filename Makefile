@@ -18,7 +18,7 @@ SOURCES := App $(PKG) scripts
 DEV_NAME := mindmap dev
 DEV_APP := $(PRODUCTS)/Debug/$(DEV_NAME).app
 
-.PHONY: build run stop screenshot logs install check-isolation test preview lint format clean
+.PHONY: build run stop screenshot logs install check-isolation test preview lint format clean icon
 
 build:
 	$(XCODEBUILD) -configuration $(CONFIG) build
@@ -70,6 +70,10 @@ test:
 
 preview:
 	swift run $(SWIFTPM) mindmap-preview --fixture $(PKG)/Tests/Fixtures/sample.mindmap --out build/preview.png
+
+# Renders the app icon from code (scripts/make-icon.swift).
+icon:
+	swift scripts/make-icon.swift
 
 lint:
 	swift format lint --strict --recursive --parallel $(SOURCES)
