@@ -35,6 +35,8 @@
       // keeping the selection and the camera.
       view.fitAll()
       await cameraIdle(view)
+      // A camera the user placed: fit-all follows rebuilds by design until the user pans.
+      view.debugPan(by: CGPoint(x: 20, y: 10))
       guard let parent = index(view, "Parent") else { return check(false, "sync node") }
       view.select(parent, camera: false)
       store.graphSelected(parent)
