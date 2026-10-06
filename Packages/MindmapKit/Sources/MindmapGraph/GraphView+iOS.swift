@@ -234,12 +234,18 @@
       pan.maximumNumberOfTouches = 2
       pan.delegate = self
       addGestureRecognizer(pan)
-      // Trackpad two-finger scrolls and mouse wheels pan.
+      // Trackpad two-finger scrolls (continuous, with a gesture phase) pan.
       let scroll = UIPanGestureRecognizer(target: self, action: #selector(scrollRecognized(_:)))
-      scroll.allowedScrollTypesMask = .all
+      scroll.allowedScrollTypesMask = .continuous
       scroll.allowedTouchTypes = []
       scroll.delegate = self
       addGestureRecognizer(scroll)
+      // Mouse wheels (discrete, no phase) zoom about the pointer, as on the Mac.
+      let wheel = UIPanGestureRecognizer(target: self, action: #selector(wheelRecognized(_:)))
+      wheel.allowedScrollTypesMask = .discrete
+      wheel.allowedTouchTypes = []
+      wheel.delegate = self
+      addGestureRecognizer(wheel)
       let pinch = UIPinchGestureRecognizer(target: self, action: #selector(pinchRecognized(_:)))
       pinch.delegate = self
       addGestureRecognizer(pinch)
@@ -296,6 +302,12 @@
       recognizer.setTranslation(.zero, in: self)
     }
 
+    @objc private func wheelRecognized(_ recognizer: UIPanGestureRecognizer) {
+      guard recognizer.state == .began || recognizer.state == .changed else { return }
+      wheel(by: recognizer.translation(in: self).y, about: recognizer.location(in: self))
+      recognizer.setTranslation(.zero, in: self)
+    }
+
     @objc private func pinchRecognized(_ recognizer: UIPinchGestureRecognizer) {
       guard recognizer.state == .began || recognizer.state == .changed else { return }
       pinch(by: recognizer.scale, about: recognizer.location(in: self))
@@ -305,12 +317,12 @@
     // MARK: Input (gesture recognizers and the DEBUG hooks both call these)
 
     /// A single tap selects (or clears and fits all); a second tap within 0.35 s renames the
-    /// node the first one hit, or adds a group where it landed. Tapping away cancels naming.
+    /// node the first one hit, or adds a group where it landed. Tapping away saves an open name,
+    /// then acts as a tap (a Mac click elsewhere does the same).
     func handleTap(at point: CGPoint, time: TimeInterval) {
       if naming != nil {
-        finishNaming(commit: false)
+        finishNaming(commit: true)
         lastTap = nil
-        return
       }
       if !isFirstResponder { _ = becomeFirstResponder() }
       if let last = lastTap, time - last.time <= Self.doubleTapInterval,
@@ -334,7 +346,7 @@
     /// A finger (or the pointer) went down and started moving. On a node it drags that node;
     /// with ⇧ held or "Move Branch" armed for it, the node brings its subtree.
     func touchDown(at point: CGPoint, shift: Bool, fingers: Int = 1) {
-      finishNaming(commit: false)
+      finishNaming(commit: true)
       lastTap = nil
       let camera = scene.visibleCamera
       scene.setCamera(camera)
@@ -379,13 +391,24 @@
 
     /// Two-finger and trackpad pans.
     func pan(by delta: CGPoint) {
-      finishNaming(commit: false)
+      finishNaming(commit: true)
       controller.move(scene.visibleCamera.panned(by: delta))
+    }
+
+    /// A mouse wheel: `delta` points of scroll (positive scrolls up) zoom about the pointer by
+    /// the Mac's wheel rule, 12% per 10 points, at most 1.5× per event.
+    func wheel(by delta: Double, about point: CGPoint) {
+      guard delta != 0 else { return }
+      finishNaming(commit: true)
+      controller.move(
+        scene.visibleCamera.zoomed(
+          by: GraphController.wheelZoom(delta, precise: true), about: point,
+          limits: controller.limits))
     }
 
     /// Pinch: zoom about the pinch center within the Mac's limits (1/10 to 10× fit all).
     func pinch(by factor: Double, about point: CGPoint) {
-      finishNaming(commit: false)
+      finishNaming(commit: true)
       controller.move(
         scene.visibleCamera.zoomed(by: factor, about: point, limits: controller.limits))
     }
@@ -413,7 +436,7 @@
     /// offers Add Task, Add Subtask, Rename, Mark Done/Not Done (tasks), Priority, Move Branch and
     /// Delete; on empty canvas, New Group there.
     public func menuItems(at point: CGPoint) -> [GraphMenuItem] {
-      finishNaming(commit: false)
+      finishNaming(commit: true)
       guard let index = scene.node(at: point, radius: Self.touchRadius),
         let model = scene.layout?.model
       else {
@@ -565,7 +588,7 @@
     /// Shows the new node's dot and an empty name field: by its parent (the spawn rule), or at
     /// `point` for a group. Nothing reaches the text until the name is committed.
     public func beginAdd(_ add: GraphAdd, at point: LayoutPoint? = nil) {
-      finishNaming(commit: false)
+      finishNaming(commit: true)
       guard let layout = scene.layout, let simulation = controller.displayedSimulation,
         simulation.layout.model == layout.model
       else { return }
@@ -591,9 +614,9 @@
         (kind, key, p), text: "", radius: group ? 9 : 4, fontSize: group ? 16 : 13)
     }
 
-    /// Double-tap on a label: edit the name in place. Return saves; Esc or tapping away cancels.
+    /// Double-tap on a label: edit the name in place. Return or tapping away saves; Esc cancels.
     public func beginRename(_ index: Int) {
-      finishNaming(commit: false)
+      finishNaming(commit: true)
       guard let layout = scene.layout, layout.nodes.indices.contains(index) else { return }
       let node = layout.nodes[index]
       startNaming(
@@ -651,9 +674,9 @@
       return false
     }
 
-    /// The keyboard went away some other way (its hide key): cancel, like tapping away.
+    /// The keyboard went away some other way (its hide key): save, like tapping away.
     public func textFieldDidEndEditing(_ textField: UITextField) {
-      finishNaming(commit: false)
+      finishNaming(commit: true)
     }
 
     #if DEBUG
@@ -675,6 +698,9 @@
       public func debugTouchMove(to point: CGPoint) { touchMoved(to: point) }
       public func debugTouchUp() { touchUp() }
       public func debugPan(by delta: CGPoint) { pan(by: delta) }
+      public func debugWheel(by delta: Double, about point: CGPoint) {
+        wheel(by: delta, about: point)
+      }
       public func debugPinch(by factor: Double, about point: CGPoint) {
         pinch(by: factor, about: point)
       }

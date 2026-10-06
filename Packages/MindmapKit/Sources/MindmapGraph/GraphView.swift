@@ -224,8 +224,7 @@
 
     /// One line (or 10 precise points) zooms 12%, proportionally, at most 1.5× per event.
     nonisolated static func wheelZoom(_ delta: Double, precise: Bool) -> Double {
-      let lines = max(-3.5, min(3.5, precise ? delta / 10 : delta))
-      return pow(1.12, lines)
+      GraphController.wheelZoom(delta, precise: precise)
     }
 
     public override func magnify(with event: NSEvent) {

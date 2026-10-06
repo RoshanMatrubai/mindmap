@@ -280,18 +280,12 @@
         return check(false, "double-tap target after zoom")
       }
       view.debugDoubleTap(at: again)
-      view.debugSetNamingText("Ignored")
-      view.debugTap(at: empty)
-      check(
-        !view.isNaming && store.text == before && view.selection == second,
-        "tapping away cancels the rename without selecting")
-      await pause()
-      view.debugDoubleTap(at: again)
       view.debugSetNamingText("Second renamed")
-      view.debugReturnKey()
-      check(!view.isNaming, "Return closes the name field")
+      view.debugTap(at: empty)
+      check(!view.isNaming, "tapping away closes the name field")
       check(
-        store.text.contains("- Second renamed /high\n"), "Return saves the rename, keeps metadata")
+        store.text.contains("- Second renamed /high\n"),
+        "tapping away saves the rename, keeps metadata")
       guard await frozen(store, view) else { return }
       check(index(view, "Second renamed") != nil, "renamed node shown")
       store.undoManager.undo()
@@ -301,6 +295,21 @@
       check(store.text.contains("- Second renamed /high\n"), "redo applies the rename again")
       guard await frozen(store, view) else { return }
       store.undoManager.undo()
+      guard await frozen(store, view) else { return }
+      await cameraIdle(view)
+      await pause()
+      guard let third = index(view, "Second").flatMap({ target(view, $0) }) else {
+        return check(false, "double-tap target after undo")
+      }
+      view.debugDoubleTap(at: third)
+      view.debugSetNamingText("Second returned")
+      view.debugReturnKey()
+      check(
+        !view.isNaming && store.text.contains("- Second returned /high\n"),
+        "Return saves the rename")
+      guard await frozen(store, view) else { return }
+      store.undoManager.undo()
+      check(store.text == before, "undo the Return rename")
       guard await frozen(store, view) else { return }
       // Double-tap empty canvas: a group at that spot.
       view.fitAll()
@@ -449,6 +458,23 @@
         abs(after.offset.x - before.offset.x + 25) < 1e-6
           && abs(after.offset.y - before.offset.y - 35) < 1e-6 && after.zoom == before.zoom,
         "trackpad scroll pans")
+      // A mouse wheel (no gesture phase) zooms about the pointer, by the Mac's wheel rule.
+      let pointer = CGPoint(x: view.bounds.width * 0.3, y: view.bounds.height * 0.6)
+      before = view.scene.camera
+      let underPointer = before.toWorld(pointer)
+      view.debugWheel(by: 10, about: pointer)
+      after = view.scene.camera
+      let stays = after.toWorld(pointer)
+      check(
+        abs(after.zoom / before.zoom - 1.12) < 1e-9, "mouse wheel up zooms in 12% per 10 points")
+      check(
+        hypot(stays.x - underPointer.x, stays.y - underPointer.y) < 1e-6,
+        "mouse wheel keeps the point under the pointer")
+      before = view.scene.camera
+      view.debugWheel(by: -500, about: pointer)
+      check(
+        abs(view.scene.camera.zoom / before.zoom - 1 / pow(1.12, 3.5)) < 1e-9,
+        "mouse wheel down zooms out, at most 1.5× per event")
       // Pinch about its center.
       let anchor = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
       before = view.scene.camera
