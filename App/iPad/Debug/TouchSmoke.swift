@@ -521,20 +521,20 @@
       await cameraIdle(view)
       let start = view.scene.camera
       let content = start.toWorld(anchor)
-      let moved = CGPoint(x: anchor.x + 10, y: anchor.y - 6)
+      let pinchAt = CGPoint(x: anchor.x + 10, y: anchor.y - 6)
       view.debugPinchFrame(centroid: anchor, scale: 1, touches: 2)
-      view.debugPinchFrame(centroid: moved, scale: 1.2, touches: 2)
+      view.debugPinchFrame(centroid: pinchAt, scale: 1.2, touches: 2)
       let pinched = view.scene.camera
       let shown = pinched.toScreen(content)
       check(
-        hypot(shown.x - moved.x, shown.y - moved.y) < 1e-6
+        hypot(shown.x - pinchAt.x, shown.y - pinchAt.y) < 1e-6
           && abs(pinched.zoom / start.zoom - 1.2) < 1e-9,
         "pinch keeps the content under the fingers as they move")
       view.debugPinchFrame(
-        centroid: CGPoint(x: moved.x + 160, y: moved.y + 90), scale: 1, touches: 1)
+        centroid: CGPoint(x: pinchAt.x + 160, y: pinchAt.y + 90), scale: 1, touches: 1)
       check(view.scene.camera == pinched, "the first finger lifting moves nothing")
       view.debugPinchFrame(
-        centroid: CGPoint(x: moved.x + 170, y: moved.y + 95), scale: 1.01, touches: 1)
+        centroid: CGPoint(x: pinchAt.x + 170, y: pinchAt.y + 95), scale: 1.01, touches: 1)
       check(view.scene.camera == pinched, "one finger left in a pinch moves nothing")
       view.debugPinchFrame(centroid: .zero, scale: 1, touches: nil)
       check(view.scene.camera == pinched, "lifting the last finger moves nothing")
