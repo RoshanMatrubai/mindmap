@@ -52,7 +52,7 @@
       check(editor.textLayoutManager != nil, "the editor uses TextKit 2")
       check(editor.delegate === editor, "the editor handles its own outline keys")
       if #available(iOS 18.0, *) {
-        check(editor.writingToolsBehavior != .complete, "Writing Tools are off")
+        check(editor.writingToolsBehavior == .none, "Writing Tools are off")
       }
       let before = store.text
       check(editor.debugColor(at: range(editor, "/high").location) == 0xc98589, "/high colored")
