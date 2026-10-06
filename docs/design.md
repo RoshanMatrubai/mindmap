@@ -136,9 +136,9 @@ The iPad graph does what the Mac graph does, with the same look, motion and ener
 | Pinch | Zoom about the pinch center, the Mac's limits (1/10 to 10× fit all) |
 | Long-press node | Context menu: Add Task, Add Subtask, Rename, Mark Done/Not Done (tasks), Priority ▸, Move Branch, Delete. Selects the node without a camera move |
 | Long-press empty canvas | Context menu with New Group (there) |
-| Double-tap a label | Rename inline: Return saves, Esc or tapping away cancels (on the Mac, clicking away saves) |
+| Double-tap a label | Rename inline: Return or tapping away saves, Esc cancels (the Mac's rules) |
 | Double-tap empty canvas | New group at that spot |
-| Trackpad or mouse | Pointer hover hugs the node's dot, click = tap, two-finger scroll and the wheel pan, pinch zooms |
+| Trackpad or mouse | Pointer hover hugs the node's dot, click = tap, trackpad two-finger scroll pans, a mouse wheel (no gesture phase) zooms about the pointer by the Mac's wheel rule, pinch zooms |
 
 - Touch hits use a 22 pt circle around a dot (the mouse uses 14 pt), then the label box.
 - A double-tap is two taps within 0.35 s and 30 pt; the second acts on what the first one hit, so the first tap's camera move can't shift the target. The first tap selects, as on the Mac.
