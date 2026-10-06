@@ -46,7 +46,7 @@
 
     /// `-select-node "garden"` selects that node once the first graph is shown, like a click;
     /// `-rename-node YES` then opens its inline name field. For screenshots.
-    @MainActor static func selectOnce(_ view: GraphView, _ store: MapStore) {
+    @MainActor static func selectOnce(_ view: GraphView, _ store: MacMapStore) {
       guard let name = UserDefaults.standard.string(forKey: "select-node"), !selected else {
         return
       }
@@ -66,7 +66,7 @@
     @MainActor private static var selected = false
 
     /// `-reshuffle-after 3` reshuffles once, that many seconds after launch, to capture the settle.
-    @MainActor static func reshuffleOnce(_ store: MapStore) {
+    @MainActor static func reshuffleOnce(_ store: MacMapStore) {
       let seconds = UserDefaults.standard.double(forKey: "reshuffle-after")
       guard seconds > 0, !reshuffled else { return }
       reshuffled = true
@@ -81,7 +81,7 @@
     /// first graph is shown. For screenshots.
     static var settingsTab: String? { UserDefaults.standard.string(forKey: "open-settings") }
 
-    @MainActor static func openSettingsOnce(_ store: MapStore) {
+    @MainActor static func openSettingsOnce(_ store: MacMapStore) {
       guard settingsTab != nil, !settingsOpened else { return }
       settingsOpened = true
       Task {
@@ -90,29 +90,5 @@
       }
     }
     @MainActor private static var settingsOpened = false
-
-    /// Logs milliseconds since the process started, once per stage (launch-time measurements).
-    @MainActor static func logLaunch(_ stage: String) {
-      guard !launchStages.contains(stage) else { return }
-      launchStages.insert(stage)
-      var info = kinfo_proc()
-      var size = MemoryLayout<kinfo_proc>.stride
-      var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
-      guard sysctl(&mib, 4, &info, &size, nil, 0) == 0 else { return }
-      let start = info.kp_proc.p_starttime
-      let started = Double(start.tv_sec) + Double(start.tv_usec) / 1e6
-      let ms = (Date().timeIntervalSince1970 - started) * 1000
-      log.notice("launch \(stage, privacy: .public) ms=\(ms, privacy: .public)")
-    }
-    @MainActor private static var launchStages = Set<String>()
-
-    /// Without `-use-folder-picker YES`, maps go in a folder inside the dev container: no picker,
-    /// no prompts, so the agent debug loop runs unattended. With it, Debug behaves like Release.
-    static var containerMapsFolder: URL? {
-      guard !UserDefaults.standard.bool(forKey: "use-folder-picker") else { return nil }
-      let url = URL.applicationSupportDirectory.appending(path: "maps")
-      try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-      return url
-    }
   }
 #endif

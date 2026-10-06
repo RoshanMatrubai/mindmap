@@ -4,7 +4,7 @@ import SwiftUI
 @main
 struct MindmapApp: App {
   @NSApplicationDelegateAdaptor(AppLifecycle.self) private var lifecycle
-  @State private var store: MapStore
+  @State private var store: MacMapStore
 
   init() {
     #if DEBUG
@@ -12,7 +12,7 @@ struct MindmapApp: App {
       DebugLaunch.requireDevBundleID()
     #endif
     log.notice("launch \(Bundle.main.bundleIdentifier ?? "<none>", privacy: .public)")
-    let store = MapStore()
+    let store = MacMapStore()
     _store = State(initialValue: store)
     AppLifecycle.store = store
   }

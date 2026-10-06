@@ -1,4 +1,4 @@
-import AppKit
+import Foundation
 import MindmapCore
 import MindmapGraph
 import Observation
@@ -16,8 +16,16 @@ struct GraphUpdate {
   let family: String
 }
 
+/// The platform-neutral map store shared by the Mac and iPad apps: the maps folder (reached
+/// through a security-scoped bookmark), listing, loading, autosave and title-based renames,
+/// parsing and layout off the main thread, graph edits applied as text changes, and the layout
+/// sidecars. The text stays the single source of truth.
+///
+/// Platform glue overrides the hooks at the end (`MacMapStore`: the AppKit editor, the folder
+/// panel and Reminders sync). Without an editor (iPad until roadmap step i3) graph edits change
+/// `text` directly, one step each on `undoManager`.
 @MainActor @Observable
-final class MapStore {
+class MapStore {
   /// Not observed: every keystroke sets it, and a SwiftUI update per keystroke cost the editor
   /// about 2 ms. Views watch `title` and `textRevision` instead.
   @ObservationIgnored var text = "untitled map\n" {
@@ -44,20 +52,20 @@ final class MapStore {
   private(set) var parsedText = ""
   /// The editor is read-only while switching. Set here, not in a SwiftUI update, so it is
   /// editable again the moment a switch ends.
-  private(set) var isSwitching = true {
-    didSet { editorView?.isEditable = !isSwitching }
+  var isSwitching = true {
+    didSet { switchingChanged() }
   }
   private(set) var graph: GraphUpdate?
   /// The detail panel's content; nil without a selection.
   private(set) var detail: NodeDetail?
-  /// Reminders status is separate from graph layout and stays idle between sync triggers.
-  let reminderSync = ReminderSyncController()
   @ObservationIgnored private var dayObserver: NSObjectProtocol?
-
-  var reminderLine: String? {
-    guard let detail, model.nodes.indices.contains(detail.index) else { return nil }
-    return reminderSync.line(for: model.nodes[detail.index], in: currentURL)
-  }
+  /// Graph edits made without an editor (iPad), one undo step each.
+  let undoManager: UndoManager = {
+    let manager = UndoManager()
+    // Each edit is its own group, so steps never merge across run loop turns.
+    manager.groupsByEvent = false
+    return manager
+  }()
 
   /// The graph view is first responder, so plain keys act on the graph.
   var graphFocused = false
@@ -71,8 +79,6 @@ final class MapStore {
   private(set) var notice: String?
   /// Every bundled font is registered, so the picker can preview each one.
   private(set) var allFontsRegistered = false
-  /// Opens the Settings window (set by the main window, which has the environment action).
-  @ObservationIgnored var openSettings: (() -> Void)?
   @ObservationIgnored private var reshuffleTask: Task<Void, Never>?
   @ObservationIgnored private var noticeTask: Task<Void, Never>?
   @ObservationIgnored private var resizeNext = false
@@ -83,7 +89,6 @@ final class MapStore {
     @ObservationIgnored private(set) var debugReshuffles = 0
   #endif
   @ObservationIgnored weak var graphView: GraphView?
-  @ObservationIgnored weak var editorView: NSTextView?
   @ObservationIgnored private var layoutState = LayoutSidecar(seed: LayoutSidecar.randomSeed())
   @ObservationIgnored private var layoutSaveTask: Task<Void, Never>?
   @ObservationIgnored private(set) var hasUnsavedLayout = false
@@ -107,12 +112,12 @@ final class MapStore {
   private var loadingText = false
   private var scoped: URL?
   private let repository = MapRepository()
-  private var saveTask: Task<Void, Never>?
+  var saveTask: Task<Void, Never>?
   private var parseTask: Task<Void, Never>?
-  private var renameTask: Task<Void, Never>?
+  var renameTask: Task<Void, Never>?
   private var switchStarted = ContinuousClock.now
   private let performance = OSLog(subsystem: Bundle.main.bundleIdentifier!, category: "motion")
-  private static let bookmarkKey = "mapsFolderBookmark"
+  static let bookmarkKey = "mapsFolderBookmark"
   private static let lastMapKey = "lastOpenMap"
   var hasUnsavedEdits: Bool { text != savedText }
 
@@ -122,9 +127,8 @@ final class MapStore {
       forName: .NSCalendarDayChanged, object: nil, queue: .main
     ) { [weak self] _ in
       Task { @MainActor [weak self] in
-        guard let self, let folder = self.folder else { return }
-        self.scheduleParse(debounce: false)
-        self.reminderSync.sync(in: folder, open: nil, all: true)
+        guard let self, self.folder != nil else { return }
+        self.dayChanged()
       }
     }
     #if DEBUG
@@ -248,12 +252,8 @@ final class MapStore {
         layout: simulation.layout, simulation: simulation, refit: refit,
         reuseNodes: !restore && !fresh, generation: (graph?.generation ?? 0) + 1,
         documentID: identity, family: family)
-      // After the graph update, so a save never delays drawing. Never sync a stale parse.
-      if reminderSync.enabled, let folder, await save(), documentID == identity,
-        text == snapshot, let url = currentURL
-      {
-        reminderSync.sync(in: folder, open: (url, result))
-      }
+      // After the graph update, so a save never delays drawing.
+      await didParse(result, text: snapshot, document: identity)
     }
   }
 
@@ -372,13 +372,11 @@ final class MapStore {
     parsedText == text && graphView?.scene.layout?.model == model
   }
 
-  private var outline: OutlineTextView? { editorView as? OutlineTextView }
-
   /// Graph → editor: a click, arrow key or right-click selected a node (or cleared it).
   func graphSelected(_ index: Int?) {
     refreshDetail()
     guard let index, graphIsCurrent, model.nodes.indices.contains(index) else { return }
-    outline?.selectLine(model.nodes[index].sourceRange)
+    revealInEditor(model.nodes[index].sourceRange)
   }
 
   /// Editor → graph: the cursor moved. Highlights its line's node without moving the camera.
@@ -408,7 +406,7 @@ final class MapStore {
     guard graphIsCurrent else { return refreshDetail() }
     switch pendingSelection {
     case .keep: break
-    case .cursor: selectNode(at: outline?.selectedRange().location ?? 0)
+    case .cursor: selectNode(at: editorCursor)
     case .location(let location): selectNode(at: location)
     case .clear: graphView?.select(nil, camera: false)
     }
@@ -425,13 +423,12 @@ final class MapStore {
     if next != detail { detail = next }
   }
 
-  /// Applies a graph edit as a text replacement through the editor, so it is one step in the
-  /// editor's undo stack, autosaves and re-parses (at once, not debounced) like typing.
+  /// Applies a graph edit as one text replacement (`applyTextChange`: through the editor on the
+  /// Mac, so it is one step in the editor's undo stack), autosaves and re-parses (at once, not
+  /// debounced) like typing. The same pure `OutlineEditing` functions on both platforms.
   @discardableResult
   func applyGraphEdit(_ edit: GraphEdit) -> Bool {
-    guard graphIsCurrent, let outline, outline.isEditable, outline.string == text else {
-      return refuse(edit)
-    }
+    guard graphIsCurrent, editorAcceptsEdits else { return refuse(edit) }
     let nodes = model.nodes
     var placement: LayoutPoint?
     let change: TextChange?
@@ -463,61 +460,64 @@ final class MapStore {
       pendingSelection = .location(change.selection.location)
     }
     pendingPlacement = placement.map { (change.selection.location, $0) }
-    var applied = false
-    outline.quietly { applied = outline.perform(change) }
-    guard applied else {
+    guard applyTextChange(change) else {
       pendingPlacement = nil
       return refuse(edit)
     }
-    outline.selectLine(change.selection)
     scheduleParse(debounce: false)
     return true
+  }
+
+  /// Without an editor: replaces the range in `text` and registers the inverse change, so undo
+  /// (and redo) restore the exact text. Overridden on the Mac to go through the editor.
+  func applyTextChange(_ change: TextChange) -> Bool {
+    let source = text as NSString
+    guard !isSwitching, change.range.location >= 0, NSMaxRange(change.range) <= source.length
+    else { return false }
+    let inverse = TextChange(
+      range: NSRange(
+        location: change.range.location, length: (change.replacement as NSString).length),
+      replacement: source.substring(with: change.range),
+      selection: NSRange(location: change.range.location, length: 0))
+    // Undo and redo open their own group; anything else is one new step.
+    let grouping = !undoManager.isUndoing && !undoManager.isRedoing
+    if grouping { undoManager.beginUndoGrouping() }
+    undoManager.registerUndo(withTarget: self) { store in
+      MainActor.assumeIsolated { store.revert(inverse) }
+    }
+    if grouping { undoManager.endUndoGrouping() }
+    text = source.replacingCharacters(in: change.range, with: change.replacement)
+    return true
+  }
+
+  /// An undo or redo step: the reverted text is re-parsed at once and its node selected.
+  private func revert(_ change: TextChange) {
+    guard applyTextChange(change) else { return }
+    pendingSelection = .location(change.selection.location)
+    scheduleParse(debounce: false)
   }
 
   /// The editor and the store (or the graph's parse) disagree, say mid-typing. Nothing changes;
   /// the detail panel says so for a few seconds instead of failing silently.
   private func refuse(_ edit: GraphEdit) -> Bool {
     log.notice(
-      "graph edit refused: \(String(describing: edit), privacy: .public) current=\(self.graphIsCurrent) editor-matches=\(self.outline?.string == self.text)"
+      "graph edit refused: \(String(describing: edit), privacy: .public) current=\(self.graphIsCurrent) editor-matches=\(self.editorAcceptsEdits)"
     )
-    notice = "couldn't apply that edit, try again"
+    showNotice("couldn't apply that edit, try again")
+    return false
+  }
+
+  /// A message in the detail panel for 3 seconds.
+  func showNotice(_ message: String) {
+    notice = message
     noticeTask?.cancel()
     noticeTask = Task {
       try? await Task.sleep(for: .seconds(3))
       if !Task.isCancelled { notice = nil }
     }
-    return false
-  }
-
-  /// ⌘1–4 and ⌘0: the selected node with the graph focused, else the editor's bullet lines.
-  func setPriority(_ priority: MapPriority?) {
-    if graphFocused {
-      if let i = graphView?.selection { applyGraphEdit(.priority(i, priority)) }
-    } else if let outline, outline.window?.firstResponder === outline {
-      outline.perform(
-        OutlineEditing.setPriority(
-          text: outline.string, selection: outline.selectedRange(), priority))
-    }
   }
 
   func toggleDone(_ index: Int) { applyGraphEdit(.toggleDone(index)) }
-
-  /// ⇧⌘X with the graph focused toggles the selected task; otherwise the editor's lines.
-  func toggleDoneFromMenu() {
-    if graphFocused, let i = graphView?.selection {
-      applyGraphEdit(.toggleDone(i))
-    } else {
-      NSApp.sendAction(#selector(OutlineTextView.toggleDone(_:)), to: nil, from: nil)
-    }
-  }
-
-  func focusEditor() {
-    if let editorView { editorView.window?.makeFirstResponder(editorView) }
-  }
-
-  func focusGraph() {
-    if let graphView { graphView.window?.makeFirstResponder(graphView) }
-  }
 
   /// ⇧⌘] / ⇧⌘[: the next or previous map in the switcher's order, wrapping around.
   func switchMap(by offset: Int) {
@@ -559,14 +559,14 @@ final class MapStore {
     }
   }
 
-  private func rename() async {
+  func rename() async {
     guard currentURL != nil else { return }
     let identity = documentID
     let title = MapDocument.title(of: text) ?? "untitled map"
     guard await save(), documentID == identity else { return }
     do {
-      await reminderSync.beginFileChange()
-      defer { reminderSync.endFileChange(in: folder, map: currentURL) }
+      await beginFileChange()
+      defer { endFileChange() }
       guard documentID == identity else { return }
       let target = try await repository.rename(document: identity, title: title)
       guard documentID == identity else { return }
@@ -668,18 +668,10 @@ final class MapStore {
     }
   }
 
-  func chooseFolder() {
-    guard !isSwitching else { return }
-    let panel = NSOpenPanel()
-    panel.message =
-      "choose where to keep your maps. a folder inside Documents keeps them private from other apps."
-    panel.prompt = "Use Folder"
-    panel.canChooseFiles = false
-    panel.canChooseDirectories = true
-    panel.canCreateDirectories = true
-    let home = String(cString: getpwuid(getuid())!.pointee.pw_dir)
-    panel.directoryURL = URL(fileURLWithPath: home).appending(path: "Documents")
-    guard panel.runModal() == .OK, let url = panel.url else { return }
+  /// Makes `url` (from a folder picker, which granted access) the maps folder: refuses folders in
+  /// or around a git work tree, saves the open map, then remembers the folder as a
+  /// security-scoped bookmark and opens its last map.
+  func adoptFolder(_ url: URL) {
     isSwitching = true
     Task {
       defer { isSwitching = false }
@@ -700,12 +692,11 @@ final class MapStore {
       }
       await rename()
       do {
-        await reminderSync.beginFileChange()
-        defer { reminderSync.endFileChange(in: folder, map: currentURL) }
-        let bookmark = try url.bookmarkData(options: .withSecurityScope)
-        guard await reminderSync.relocate(to: url) else {
+        await beginFileChange()
+        defer { endFileChange() }
+        let bookmark = try url.bookmarkData(options: MapFolderAccess.creation)
+        guard await folderWillMove(to: url) else {
           if access { url.stopAccessingSecurityScopedResource() }
-          errorMessage = reminderSync.lastError
           return
         }
         UserDefaults.standard.set(bookmark, forKey: Self.bookmarkKey)
@@ -725,7 +716,8 @@ final class MapStore {
     var stale = false
     do {
       let url = try URL(
-        resolvingBookmarkData: data, options: .withSecurityScope, bookmarkDataIsStale: &stale)
+        resolvingBookmarkData: data, options: MapFolderAccess.resolution,
+        bookmarkDataIsStale: &stale)
       guard url.startAccessingSecurityScopedResource() else {
         log.error("maps folder bookmark grants no access")
         return
@@ -734,7 +726,7 @@ final class MapStore {
         // Still resolves and grants access: renew it quietly instead of asking again.
         do {
           UserDefaults.standard.set(
-            try url.bookmarkData(options: .withSecurityScope), forKey: Self.bookmarkKey)
+            try url.bookmarkData(options: MapFolderAccess.creation), forKey: Self.bookmarkKey)
           log.notice("renewed stale maps folder bookmark")
         } catch { log.error("renewing stale bookmark failed: \(error, privacy: .public)") }
       }
@@ -748,11 +740,22 @@ final class MapStore {
     } catch { report("restore maps folder", error) }
   }
 
+  /// Without a picker (the iPad until roadmap step i4): maps live in the app's own container.
+  func useAppFolder() {
+    guard folder == nil, !isSwitching else { return }
+    let url = URL.applicationSupportDirectory.appending(path: "maps")
+    do {
+      try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    } catch { return report("maps folder", error) }
+    isSwitching = true
+    Task { await use(url) }
+  }
+
   private func use(_ url: URL) async {
     defer { isSwitching = false }
-    await reminderSync.drain()
+    await drainSync()
     folder = url
-    reminderSync.start(in: url)
+    folderOpened(url)
     do {
       maps = try await repository.list(url)
       let remembered = UserDefaults.standard.string(forKey: Self.lastMapKey)
@@ -774,9 +777,16 @@ final class MapStore {
     layoutSaveTask?.cancel()
     await saveLayout()
     let result = await save()
-    await reminderSync.drain()
+    await drainSync()
     if !result { isSwitching = false }
     return result
+  }
+
+  /// Saves the text and layout now without ending editing (the iPad going to the background).
+  func saveNow() async {
+    layoutSaveTask?.cancel()
+    await saveLayout()
+    _ = await save()
   }
 
   private func remember() {
@@ -803,13 +813,59 @@ final class MapStore {
     )
   }
 
-  nonisolated private static func milliseconds(_ duration: Duration) -> Double {
+  nonisolated static func milliseconds(_ duration: Duration) -> Double {
     let c = duration.components
     return Double(c.seconds) * 1000 + Double(c.attoseconds) / 1e15
   }
 
-  private func report(_ action: String, _ error: Error) {
+  func report(_ action: String, _ error: Error) {
     log.error("\(action, privacy: .public) failed: \(error, privacy: .public)")
     errorMessage = "\(action) failed: \(error.localizedDescription)"
+  }
+
+  // MARK: Platform hooks
+
+  /// A line about the selected node from platform services (Reminders on the Mac).
+  var reminderLine: String? { nil }
+  /// The editor follows `isSwitching` (read-only while switching).
+  func switchingChanged() {}
+  /// Graph → editor: select and reveal a node's line.
+  func revealInEditor(_ range: NSRange) {}
+  /// The editor's cursor location, for highlighting its line's node.
+  var editorCursor: Int { 0 }
+  /// Whether a graph edit can be applied now (the editor shows `text` and is editable).
+  var editorAcceptsEdits: Bool { !isSwitching }
+  /// Local midnight: due dates and urgency change.
+  func dayChanged() { scheduleParse(debounce: false) }
+  /// A parse of `text` reached the graph.
+  func didParse(_ model: MapModel, text: String, document: UUID) async {}
+  /// Around a map file rename or folder change.
+  func beginFileChange() async {}
+  func endFileChange() {}
+  /// Finishes queued background work before the folder changes or the app quits.
+  func drainSync() async {}
+  /// Before a newly picked folder is adopted; false keeps the old one.
+  func folderWillMove(to url: URL) async -> Bool { true }
+  /// The maps folder is in use.
+  func folderOpened(_ url: URL) {}
+}
+
+/// Security-scoped bookmarks: macOS needs the security-scope option; iPadOS bookmarks carry the
+/// scope of a document picker's URL on their own.
+enum MapFolderAccess {
+  static var creation: URL.BookmarkCreationOptions {
+    #if os(macOS)
+      .withSecurityScope
+    #else
+      []
+    #endif
+  }
+
+  static var resolution: URL.BookmarkResolutionOptions {
+    #if os(macOS)
+      .withSecurityScope
+    #else
+      []
+    #endif
   }
 }

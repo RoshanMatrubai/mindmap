@@ -122,6 +122,29 @@ Other step 3b rules:
 - The detail panel shows the name and path lowercased, like the graph. The group's task count is its leaf tasks (prototype `desc()`); next due and high priority look at every open task in it, including tasks with subtasks (the prototype's leaf-only rule hid a `/high` parent task). Tasks with subtasks show the task fields; only leaves get the checkbox.
 - Highlighting changes layer properties only. Node dots are plain layers (fill and border colors); labels are a canvas-colored halo raster plus a glyph raster in `#f2f2f7` whose opacity gives each label color. Highlighted nodes move to a container above the highlighted edges, and highlighted edges and cross links (`#6a4ff0`, 1.3 px at 90% for cross links, as in the prototype) get their own shape layers. Dimmed nodes don't use group opacity, which would render each one offscreen.
 
+## iPad touch (step i2)
+
+The iPad graph does what the Mac graph does, with the same look, motion and energy rules (120 Hz while moving, no display link when frozen, none while the scene is in the background). Graph edits use the same `OutlineEditing` functions; drags use the same bounded cascade, cooling while held and 250-unit repel cutoff.
+
+| Touch | Does |
+|---|---|
+| Tap node | Select: highlight the branch, camera fits it (a Mac click) |
+| Tap empty canvas | Clear the selection and fit all (only when something was selected) |
+| One-finger drag on a node | Move that node only (crowded neighbors pushed); pinned on release |
+| ⇧ + drag (hardware keyboard), or "Move Branch" in the long-press menu then drag | Move the node with its branch. "Move Branch" lasts for one drag |
+| One-finger drag on empty canvas, two-finger pan | Pan |
+| Pinch | Zoom about the pinch center, the Mac's limits (1/10 to 10× fit all) |
+| Long-press node | Context menu: Add Task, Add Subtask, Rename, Mark Done/Not Done (tasks), Priority ▸, Move Branch, Delete. Selects the node without a camera move |
+| Long-press empty canvas | Context menu with New Group (there) |
+| Double-tap a label | Rename inline: Return or tapping away saves, Esc cancels (the Mac's rules) |
+| Double-tap empty canvas | New group at that spot |
+| Trackpad or mouse | Pointer hover hugs the node's dot, click = tap, trackpad two-finger scroll pans, a mouse wheel (no gesture phase) zooms about the pointer by the Mac's wheel rule, pinch zooms |
+
+- Touch hits use a 22 pt circle around a dot (the mouse uses 14 pt), then the label box.
+- A double-tap is two taps within 0.35 s and 30 pt; the second acts on what the first one hit, so the first tap's camera move can't shift the target. The first tap selects, as on the Mac.
+- The context menu points at the node with an invisible anchor instead of lifting a snapshot of the graph.
+- The detail panel is shared with the Mac (`App/Shared/DetailPanel.swift`); on the iPad the done checkbox is a tappable square and linked names have hover effects.
+
 ## Settings
 
 These appear in two places, a floating forces panel inside the graph pane (toggled from the toolbar and ⌥⌘F, styled like the prototype's) and the standard Settings window (⌘,). Both edit the same values live, in both directions. Every value is app-wide and persists in the container's UserDefaults, one key each, so a launch argument such as `-labelFont Quicksand` overrides it. Nothing in them is sensitive. The layout seed and pins stay per map, in the sidecar.

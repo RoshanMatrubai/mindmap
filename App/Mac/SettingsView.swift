@@ -5,7 +5,7 @@ import SwiftUI
 /// ⌘,: the same preferences as the forces panel. Graph: forces, urgency, animate settle and a
 /// reshuffle button. Text: the label font, label size and editor size.
 struct SettingsView: View {
-  @Bindable var store: MapStore
+  @Bindable var store: MacMapStore
   @State private var tab = Self.initialTab
 
   private static var initialTab: String {
