@@ -2,12 +2,10 @@ import MindmapCore
 import SwiftUI
 
 /// The iPad's half of `AppCommand`: the same names and keys as the Mac, in the iPadOS menu bar
-/// and the ⌘-hold overlay. Settings and the forces panel come with roadmap step i5.
+/// and the ⌘-hold overlay.
 extension AppCommand {
-  /// Every command the iPad offers, in menu order.
-  static let iPad: [AppCommand] = allCases.filter {
-    ![.settings, .toggleForcesPanel].contains($0)
-  }
+  /// Every command the iPad offers: all of the Mac's.
+  static let iPad: [AppCommand] = allCases
 
   func isDisabled(_ store: PadMapStore) -> Bool {
     switch self {
@@ -21,7 +19,6 @@ extension AppCommand {
       store.graphFocused && store.detail == nil
     case .biggerLabels: store.preferences.labelSize >= Preferences.labelSizeRange.upperBound
     case .smallerLabels: store.preferences.labelSize <= Preferences.labelSizeRange.lowerBound
-    case .settings, .toggleForcesPanel: true
     default: false
     }
   }
@@ -42,7 +39,8 @@ extension AppCommand {
     case .reshuffle: store.reshuffle()
     case .focusEditor: store.focusEditor()
     case .focusGraph: store.focusGraph()
-    case .settings, .toggleForcesPanel: break
+    case .settings: store.layout.showingSettings = true
+    case .toggleForcesPanel: store.layout.showingForces.toggle()
     case .biggerLabels: store.preferences.stepLabelSize(by: 1)
     case .smallerLabels: store.preferences.stepLabelSize(by: -1)
     case .clearSelection: store.graphView?.clearSelection()

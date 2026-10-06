@@ -208,6 +208,7 @@
       await shortcutChecks(store, view)
       await layoutChecks(store, view)
       await syncChecks(store, view)
+      await settingsChecks(store, view)
       _ = await wait("text autosave finishes") { !store.hasUnsavedEdits }
       let created = store.currentURL
       store.switchMap(original)

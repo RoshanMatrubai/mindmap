@@ -16,6 +16,11 @@ final class PadLayout {
   var isWide = false
   /// The folder picker is up (Release, or the dev app with `-use-folder-picker YES`).
   var pickingFolder = false
+  /// The settings sheet (⌘,) and the forces popover (⌥⌘F) are up.
+  var showingSettings = false
+  var showingForces = false
+  enum SettingsTab: String { case graph, text }
+  var settingsTab = SettingsTab.graph
   #if DEBUG
     /// The smoke harness and `-layout wide|narrow` force a layout; nil follows the window.
     var forcedWide: Bool?

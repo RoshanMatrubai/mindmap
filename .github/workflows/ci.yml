@@ -47,6 +47,22 @@ jobs:
         run: make ipad-build
       - name: iPad Release build
         run: make ipad-build CONFIG=Release
+      - name: Device picker for make ipad-install (fake devicectl output)
+        run: |
+          mkdir -p build
+          dev() { printf '{"result":{"devices":[{"identifier":"ID-1","deviceProperties":{"name":"Desk iPad","developerModeStatus":"%s"},"hardwareProperties":{"deviceType":"iPad"},"connectionProperties":{"transportType":"wired","tunnelState":"connected"}}]}}' "$1" > build/devices.json; }
+          dev enabled
+          test "$(swift scripts/ipad-device.swift build/devices.json)" = "ID-1"
+          test "$(swift scripts/ipad-device.swift build/devices.json "Desk iPad")" = "ID-1"
+          ! swift scripts/ipad-device.swift build/devices.json "Other iPad"
+          dev disabled
+          ! swift scripts/ipad-device.swift build/devices.json
+          rm build/devices.json
+      - name: App icon in the iPad app
+        run: |
+          plist="build/DerivedData/Build/Products/Release-iphonesimulator/mindmap.app/Info.plist"
+          plutil -p "$plist" | grep -A6 CFBundleIcons
+          plutil -p "$plist" | grep -q AppIcon
       - name: Tree is clean (data rule)
         run: |
           if [ -n "$(git status --porcelain)" ]; then
@@ -112,6 +128,12 @@ jobs:
           stage portrait-text "-orientation portrait -layout narrow -pane text" "layout"
           stage portrait-map "-orientation portrait -layout narrow -pane map" "layout"
           stage keyboard-bar "-orientation portrait -layout narrow -pane text -focus-editor YES" "editor focused"
+          stage settings-sheet "-orientation portrait -open-settings graph" "settings graph"
+          stage forces-popover "-orientation portrait -show-forces YES" "forces"
+          # The dev icon (orange badge) on the home screen.
+          make ipad-stop
+          sleep 3
+          make ipad-screenshot && cp build/ipad-screenshot.png build/ipad-artifacts/home-screen-icon.png
           make ipad-logs LAST=10m > build/ipad-artifacts/ipad-screenshots.log 2>&1 || true
           make ipad-stop
       - name: Screenshot previews in the log

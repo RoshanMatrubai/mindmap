@@ -94,6 +94,22 @@ make install
 
 mindmap is now in your applications folder. open it like any other app.
 
+### on ipad
+
+mindmap also runs on an ipad (ipados 17 or newer), installed from your mac with a cable. you don't need a paid developer account; a free apple id works.
+
+1. in xcode, sign in with your apple id (xcode > settings > accounts). copy `Config/Local.xcconfig.example` to `Config/Local.xcconfig` and put your team id in it.
+2. connect the ipad with a cable, unlock it and tap trust.
+3. turn on developer mode on the ipad: settings > privacy & security > developer mode, then restart it.
+4. run `make ipad-install` (with more than one ipad, `make ipad-install DEVICE="my ipad"`).
+5. the first time, trust your certificate on the ipad: settings > general > vpn & device management.
+
+with a free apple id the app stops opening after 7 days. run `make ipad-install` again to renew it; your maps stay.
+
+to use the same maps on your mac and your ipad, keep the maps folder in icloud drive: on the mac, choose a folder inside icloud drive (file > change maps folder…); on the ipad, pick the same folder the first time the app asks (or change maps folder… in the title menu). changes show up on the other device on their own. if both change the same map at once, nothing is lost: the other version is saved as its own map, named "(conflict …)".
+
+reminders sync is mac only: the ipad never touches reminders.
+
 ## how to modify it (for developers)
 
 | command | what it does |

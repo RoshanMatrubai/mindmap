@@ -29,6 +29,9 @@ struct MindmapApp: App {
       }
     }
     .commands {
+      CommandGroup(replacing: .appSettings) {
+        AppCommand.settings.button(store)
+      }
       CommandGroup(replacing: .newItem) {
         AppCommand.newMap.button(store)
         Button("Change Maps Folder…") { store.chooseFolder() }
@@ -63,6 +66,7 @@ struct MindmapApp: App {
         AppCommand.fitAll.button(store)
         AppCommand.reshuffle.button(store)
         Divider()
+        AppCommand.toggleForcesPanel.button(store)
         AppCommand.biggerLabels.button(store)
         AppCommand.smallerLabels.button(store)
         Divider()
