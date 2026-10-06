@@ -117,6 +117,8 @@ class MapStore {
   @ObservationIgnored private var syncTask: Task<Void, Never>?
   @ObservationIgnored private var syncAgain = false
   @ObservationIgnored private var reconciling = false
+  /// Between a reload from disk and the graph showing it: the selection stays where it was.
+  @ObservationIgnored private var reloadingInPlace = false
   private var parseTask: Task<Void, Never>?
   var renameTask: Task<Void, Never>?
   private var switchStarted = ContinuousClock.now
@@ -385,6 +387,8 @@ class MapStore {
 
   /// Editor → graph: the cursor moved. Highlights its line's node without moving the camera.
   func editorSelectionChanged(_ range: NSRange) {
+    // A reload replaced the editor's text; the cursor it reports isn't the user's choice.
+    guard !reloadingInPlace else { return }
     guard graphIsCurrent else {
       pendingSelection = .cursor
       return
@@ -408,6 +412,7 @@ class MapStore {
   /// panel (counts and urgency may have changed).
   func graphDidUpdate() {
     guard graphIsCurrent else { return refreshDetail() }
+    reloadingInPlace = false
     switch pendingSelection {
     case .keep: break
     case .cursor: selectNode(at: editorCursor)
@@ -711,6 +716,7 @@ class MapStore {
         // Keeps selection and camera: the parse matches nodes against the shown graph.
         loaded = disk
         savedText = disk.text
+        reloadingInPlace = true
         loadingText = true
         text = disk.text
         loadingText = false

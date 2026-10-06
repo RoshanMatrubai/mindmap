@@ -44,9 +44,12 @@
       await wait("a change from another device reloads the open map") { store.text == remote }
       guard await frozen(store, view) else { return }
       check(index(view, "Remote task") != nil, "the reloaded map shows the new task")
+      await pause(300)
       check(
-        view.selection == index(view, "Parent") && view.scene.camera == camera,
-        "reload keeps the selection and the camera")
+        view.selection == index(view, "Parent"),
+        "reload keeps the selection (\(view.selection.map { store.model.nodes[$0].name } ?? "none"))"
+      )
+      check(view.scene.camera == camera, "reload keeps the camera")
       check(!store.hasUnsavedEdits, "a reload leaves nothing to save")
       // A change from another device while this one has unsaved edits: keep the open text, save
       // the other version as a visible conflict copy.
@@ -105,6 +108,10 @@
       try? FileManager.default.removeItem(at: reminders)
       store.text = before
       await frozen(store, view)
+      let title = MapDocument.title(of: before) ?? ""
+      await wait("the map takes its title back", seconds: 20) {
+        store.currentURL?.lastPathComponent == title + ".mindmap" && !store.hasUnsavedEdits
+      }
     }
   }
 #endif
