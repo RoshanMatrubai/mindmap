@@ -2,7 +2,8 @@
 // <json> is `xcrun devicectl list devices --json-output` output; [device] is a name or hardware
 // UDID. Prints "<hardware udid> <CoreDevice identifier>": xcodebuild's -destination id is the
 // UDID, `devicectl device install app --device` takes the identifier. Exits 1 with a message when
-// no iPad (or several, without [device]) is connected, or Developer Mode is off.
+// no iPad (or several, without [device]) is connected, or Developer Mode is off. Simulators are
+// in the same list (Xcode 26 and later) and are never candidates.
 import Foundation
 
 func fail(_ message: String) -> Never {
@@ -25,7 +26,25 @@ func name(_ device: [String: Any]) -> String {
 }
 func udid(_ device: [String: Any]) -> String? { value(device, "hardwareProperties", "udid") }
 
-let ipads = devices.filter { value($0, "hardwareProperties", "deviceType") == "iPad" }
+/// A real device, not a simulator. `reality` ("physical" or "simulated") is the direct flag:
+/// under `properties.hardware` (Xcode 27's replacement dictionary) or `hardwareProperties`.
+/// Without it, a simulator's transport is "sameMachine" (it runs on this Mac).
+func physical(_ device: [String: Any]) -> Bool {
+  let hardware = (device["properties"] as? [String: Any])?["hardware"] as? [String: Any]
+  if let reality = hardware?["reality"] as? String ?? value(device, "hardwareProperties", "reality")
+  {
+    return reality == "physical"
+  }
+  let connection = (device["properties"] as? [String: Any])?["connection"] as? [String: Any]
+  let transport =
+    connection?["transportType"] as? String
+    ?? value(device, "connectionProperties", "transportType")
+  return transport != "sameMachine"
+}
+
+let ipads = devices.filter {
+  value($0, "hardwareProperties", "deviceType") == "iPad" && physical($0)
+}
 // Connected now (a cable or the same network), not just paired at some point.
 let connected = ipads.filter {
   value($0, "connectionProperties", "tunnelState") != "unavailable"
