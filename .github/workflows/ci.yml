@@ -109,6 +109,18 @@ jobs:
           stage mid-rename "-select-node 'plant herbs' -rename-node YES" "rename plant herbs"
           make ipad-logs LAST=10m > build/ipad-artifacts/ipad-screenshots.log 2>&1 || true
           make ipad-stop
+      - name: Screenshot previews in the log
+        # Small JPEGs as base64, for readers that can see the log but not the artifacts.
+        if: always()
+        run: |
+          for f in build/ipad-artifacts/*.png; do
+            [ -f "$f" ] || continue
+            sips -s format jpeg -s formatOptions 60 -Z 640 "$f" --out /tmp/preview.jpg >/dev/null
+            echo "preview-begin $(basename "$f")"
+            base64 -i /tmp/preview.jpg | tr -d '\n'
+            echo
+            echo "preview-end $(basename "$f")"
+          done
       - name: Upload log and screenshots
         if: always()
         uses: actions/upload-artifact@v4
