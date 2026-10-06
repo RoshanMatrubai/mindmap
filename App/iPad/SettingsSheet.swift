@@ -19,9 +19,8 @@ struct SettingsSheet: View {
       .toolbar {
         ToolbarItem(placement: .principal) {
           Picker("Tab", selection: Bindable(store.layout).settingsTab) {
-            Label("Graph", systemImage: "point.3.connected.trianglepath.dotted")
-              .tag(PadLayout.SettingsTab.graph)
-            Label("Text", systemImage: "textformat").tag(PadLayout.SettingsTab.text)
+            Text("Graph").tag(PadLayout.SettingsTab.graph)
+            Text("Text").tag(PadLayout.SettingsTab.text)
           }
           .pickerStyle(.segmented)
           .frame(width: 220)
