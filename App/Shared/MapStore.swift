@@ -113,6 +113,10 @@ class MapStore {
   private var scoped: URL?
   private let repository = MapRepository()
   var saveTask: Task<Void, Never>?
+  @ObservationIgnored private var presenter: MapFolderPresenter?
+  @ObservationIgnored private var syncTask: Task<Void, Never>?
+  @ObservationIgnored private var syncAgain = false
+  @ObservationIgnored private var reconciling = false
   private var parseTask: Task<Void, Never>?
   var renameTask: Task<Void, Never>?
   private var switchStarted = ContinuousClock.now
@@ -537,7 +541,12 @@ class MapStore {
 
   @discardableResult
   func save() async -> Bool {
-    guard currentURL != nil, hasUnsavedEdits else { return true }
+    guard let url = currentURL, hasUnsavedEdits else { return true }
+    // Another device may have written since the last read: never overwrite that unseen.
+    if !reconciling, let loaded, (try? await repository.changed(url, since: loaded)) == true {
+      await reconcileOpenMap()
+      guard currentURL == url, hasUnsavedEdits else { return true }
+    }
     let identity = documentID
     let snapshot = text
     do {
@@ -616,6 +625,13 @@ class MapStore {
       let identity = UUID()
       let readStart = ContinuousClock.now
       os_signpost(.begin, log: performance, name: "FileRead")
+      let downloading = !MapFiles.isDownloaded(url)
+      if downloading {
+        // Not on this device yet (iCloud Drive): the coordinated read waits for the download.
+        notice = "downloading…"
+        try? FileManager.default.startDownloadingUbiquitousItem(at: url)
+      }
+      defer { if downloading && notice == "downloading…" { notice = nil } }
       let result = try await repository.open(url, document: identity)
       os_signpost(.end, log: performance, name: "FileRead")
       log.notice(
@@ -645,27 +661,78 @@ class MapStore {
     } catch { report("open map", error) }
   }
 
-  /// Activation is the only external-change trigger. Dirty text always wins.
+  /// Activation (and the folder presenter, below) check the open map against its file.
   func activated() {
-    guard !isSwitching, !hasUnsavedEdits, let url = currentURL, let folder else { return }
-    Task {
-      do {
-        let changed = try await repository.changed(url, since: loaded)
-        guard !hasUnsavedEdits, currentURL == url, !isSwitching else { return }
-        if changed {
-          let result = try await repository.load(url)
-          guard !hasUnsavedEdits, currentURL == url, !isSwitching else { return }
-          loaded = result
-          savedText = result.text
-          loadingText = true
-          text = result.text
-          loadingText = false
-          scheduleParse()
-        }
-        let result = try await repository.list(folder)
-        if self.folder == folder { maps = result }
-      } catch { report("reload map", error) }
+    guard !isSwitching, currentURL != nil, folder != nil else { return }
+    folderChanged(nil)
+  }
+
+  // MARK: Changes from other devices
+
+  /// The maps folder changed outside this app (a map, or the folder when nil). Checks the open
+  /// map and re-lists the folder. Bursts of events coalesce into one more pass, so nothing
+  /// queues up and nothing is scheduled while the folder is quiet.
+  func folderChanged(_ url: URL?) {
+    if let url, url.pathExtension != "mindmap" { return }
+    guard syncTask == nil else {
+      syncAgain = true
+      return
     }
+    syncTask = Task {
+      repeat {
+        syncAgain = false
+        await reconcileOpenMap()
+        do { try await refreshMaps() } catch { report("list maps", error) }
+      } while syncAgain
+      syncTask = nil
+    }
+  }
+
+  /// Brings the open map in line with its file (`MapSync.decide`): reload in place when there
+  /// are no unsaved edits; otherwise keep the open text and save the disk version, and any
+  /// iCloud conflict versions, as visible conflict copies. Never loses text.
+  func reconcileOpenMap() async {
+    guard !isSwitching, !reconciling, let url = currentURL, let folder else { return }
+    reconciling = true
+    defer { reconciling = false }
+    let identity = documentID
+    do {
+      let conflicts = try await repository.takeConflictVersions(of: url)
+      guard try await repository.changed(url, since: loaded) || !conflicts.isEmpty else { return }
+      let disk = try await repository.load(url)
+      let saver = await repository.currentSaver(of: url)
+      guard documentID == identity, currentURL == url, !isSwitching else { return }
+      var copies = conflicts.filter { $0.text != text && $0.text != disk.text }
+      switch MapSync.decide(saved: savedText, open: text, disk: disk.text) {
+      case .none:
+        loaded = disk
+        if disk.text == text { savedText = disk.text }
+      case .reload:
+        // Keeps selection and camera: the parse matches nodes against the shown graph.
+        loaded = disk
+        savedText = disk.text
+        loadingText = true
+        text = disk.text
+        loadingText = false
+        scheduleParse(debounce: false)
+        log.notice("sync reloaded the open map")
+      case .keepOpenAndCopyDisk:
+        copies.append(.init(text: disk.text, device: saver, date: disk.modified ?? Date()))
+        loaded = disk
+      }
+      var names: [String] = []
+      for copy in copies {
+        let text = MapSync.conflictCopy(of: copy.text, device: copy.device, date: copy.date)
+        let created = try await repository.create(text, in: folder)
+        names.append(created.deletingPathExtension().lastPathComponent)
+      }
+      if !names.isEmpty {
+        log.notice("sync kept \(names.count) conflict copies")
+        showNotice("kept the other version as \"\(names[0])\"")
+        // The open text wins: write it over the disk version that was just copied.
+        _ = await save()
+      }
+    } catch { report("sync", error) }
   }
 
   /// Makes `url` (from a folder picker, which granted access) the maps folder: refuses folders in
@@ -744,6 +811,7 @@ class MapStore {
     defer { isSwitching = false }
     await drainSync()
     folder = url
+    await watch(url)
     folderOpened(url)
     do {
       maps = try await repository.list(url)
@@ -769,6 +837,18 @@ class MapStore {
     await drainSync()
     if !result { isSwitching = false }
     return result
+  }
+
+  /// Registers a file presenter for the maps folder (replacing the last one), so changes from
+  /// other devices arrive as events; repository reads and writes pass it to their coordinators.
+  private func watch(_ folder: URL) async {
+    if let presenter { NSFileCoordinator.removeFilePresenter(presenter) }
+    let presenter = MapFolderPresenter(folder: folder) { [weak self] url in
+      Task { @MainActor [weak self] in self?.folderChanged(url) }
+    }
+    self.presenter = presenter
+    await repository.setPresenter(presenter)
+    NSFileCoordinator.addFilePresenter(presenter)
   }
 
   /// Saves the text and layout now without ending editing (the iPad going to the background).

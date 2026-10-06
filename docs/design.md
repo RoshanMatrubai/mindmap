@@ -157,6 +157,20 @@ The iPad graph does what the Mac graph does, with the same look, motion and ener
 | Sync | As on the Mac: tapping a node selects its line, moving the cursor highlights its node without moving the camera, and graph edits go through the editor (one step in its undo stack) |
 | Maps | The toolbar's title menu switches maps and has New Map and Change Maps Folder…; autosave and title-based file names as on the Mac. Release asks for a folder (document picker, security-scoped bookmark); the dev app keeps maps in its container unless launched with `-use-folder-picker YES` |
 
+## iCloud Drive sync (step i4)
+
+No CloudKit and no iCloud entitlement: both apps use a maps folder the user picks, which can live in iCloud Drive.
+
+| Topic | Decision |
+|---|---|
+| Watching | `MapFolderPresenter` (`NSFilePresenter`) on the maps folder: the system calls it when a map changes, appears, moves or gains a version. No timers, no polling; bursts coalesce into one more pass |
+| Reads and writes | Every repository read and write is coordinated (`NSFileCoordinator`), passing the presenter so the app isn't told about its own writes. A coordinated read of a file iCloud hasn't downloaded waits for the download |
+| Reload | A change on disk while the open map has no unsaved edits reloads it in place: the parse matches nodes against the shown graph, so the selection and the camera stay |
+| Conflicts | A change on disk while the open map has unsaved edits, or iCloud conflict versions (`NSFileVersion`): the open text stays the map, every other version becomes a new visible map "<title> (conflict <device> <yyyy-MM-dd HH.mm>)", conflict versions are marked resolved and removed, and the detail panel says so. Autosave checks the file before writing, so it never overwrites a version it hasn't seen. The decision and the naming are pure functions (`MapSync` in MindmapCore, unit-tested) |
+| Not downloaded | Listed by file name (iPadOS `.<name>.icloud` placeholders, macOS dataless files); opening one starts the download and shows "downloading…" |
+| Sidecars | Layout sidecars stay hidden dot-files next to their map, read and written with coordination; last writer wins. Apple documents no exclusion of dot-files from iCloud Drive (only the `.nosync` suffix opts out), and they sync, hidden from Files and iCloud.com |
+| Reminders | Mac-only. The iPad never reads, writes, moves or deletes the reminders sidecars |
+
 ## Settings
 
 These appear in two places, a floating forces panel inside the graph pane (toggled from the toolbar and ⌥⌘F, styled like the prototype's) and the standard Settings window (⌘,). Both edit the same values live, in both directions. Every value is app-wide and persists in the container's UserDefaults, one key each, so a launch argument such as `-labelFont Quicksand` overrides it. Nothing in them is sensitive. The layout seed and pins stay per map, in the sidecar.

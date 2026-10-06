@@ -39,4 +39,22 @@ struct MapFilesTests {
     #expect(maps.map(\.title) == ["New title", "Old title"])
     #expect(maps.map(\.url.lastPathComponent) == ["new.mindmap", "old.mindmap"])
   }
+
+  @Test func listsMapsICloudHasNotDownloaded() throws {
+    let folder = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    try "Real\n".write(
+      to: folder.appending(path: "real.mindmap"), atomically: true, encoding: .utf8)
+    // iPadOS placeholders: hidden `.<name>.icloud` files, here for a map and for a sidecar.
+    for name in [".ghost.mindmap.icloud", "..real.mindmap.layout.json.icloud"] {
+      try "plist".write(to: folder.appending(path: name), atomically: true, encoding: .utf8)
+    }
+    let maps = try MapFiles.list(in: folder)
+    #expect(Set(maps.map(\.title)) == ["Real", "ghost"])
+    let ghost = try #require(maps.first { $0.title == "ghost" })
+    #expect(!ghost.isDownloaded && ghost.url.lastPathComponent == "ghost.mindmap")
+    #expect(!MapFiles.isDownloaded(ghost.url))
+    #expect(MapFiles.isDownloaded(folder.appending(path: "real.mindmap")))
+  }
 }
