@@ -20,7 +20,7 @@ Rules for every coding agent working in this repo. Read this first; details live
 | `make ipad-run` | Boots the simulator (`SIM="<name>"`, default "iPad Pro 12.9 M1" if it exists, else "iPad Pro 13-inch (M5)"), installs and launches "mindmap dev" (`ARGS="-fixture sample"`) |
 | `make ipad-stop` | Quits "mindmap dev" in the booted simulator |
 | `make ipad-screenshot` | Captures the booted simulator's screen to `build/ipad-screenshot.png` |
-| `make ipad-logs` | Last 2 minutes of the dev app's `os.Logger` output in the simulator |
+| `make ipad-logs` | Last 2 minutes of the dev app's `os.Logger` output in the simulator (`LAST=15m` for longer) |
 
 All build output goes to `build/` (gitignored). Requires Xcode 26+.
 
@@ -40,7 +40,7 @@ All build output goes to `build/` (gitignored). Requires Xcode 26+.
 
 DEBUG-only code goes in `App/Shared/Debug/` or `App/Mac/Debug/` inside `#if DEBUG`; Release excludes those folders.
 
-The iPad app: `make ipad-run ARGS="-fixture sample"` → `make ipad-screenshot` (look at `build/ipad-screenshot.png`) → `make ipad-logs` → `make ipad-stop`. The simulator keeps the app's data in its own sandbox, apart from the Mac and from the user's real data.
+The iPad app: `make ipad-run ARGS="-fixture sample"` → `make ipad-screenshot` (look at `build/ipad-screenshot.png`) → `make ipad-logs` → `make ipad-stop`. The simulator keeps the app's data in its own sandbox, apart from the Mac and from the user's real data. `ARGS="-fixture sample -editor-smoke YES"` runs the touch smoke harness (`App/iPad/Debug/TouchSmoke.swift`; PASS/FAIL lines, then `touch smoke complete: N checks, F failures`); `-select-node garden`, `-show-menu garden` and `-select-node garden -rename-node YES` stage screenshots.
 
 ## The data rule
 
