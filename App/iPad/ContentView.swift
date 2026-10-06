@@ -54,6 +54,9 @@ struct ContentView: View {
         TouchSmoke.runIfRequested(store)
       #endif
     }
+    .sheet(isPresented: Bindable(store.layout).showingSettings) {
+      SettingsSheet(store: store)
+    }
     .sheet(isPresented: Bindable(store.layout).pickingFolder) {
       FolderPicker { url in store.adoptFolder(url) }
         .ignoresSafeArea()
@@ -127,6 +130,25 @@ struct ContentView: View {
       }
       .disabled(store.isSwitching)
       .accessibilityLabel("Switch maps")
+    }
+    ToolbarItemGroup(placement: .topBarTrailing) {
+      Button {
+        store.layout.showingForces.toggle()
+      } label: {
+        Label("Forces", systemImage: "slider.horizontal.3")
+      }
+      .popover(isPresented: Bindable(store.layout).showingForces) {
+        ForcesPanel(store: store)
+          .padding(4)
+          .presentationCompactAdaptation(.popover)
+      }
+      .accessibilityLabel("Forces (⌥⌘F)")
+      Button {
+        store.layout.showingSettings = true
+      } label: {
+        Label("Settings", systemImage: "gearshape")
+      }
+      .accessibilityLabel("Settings (⌘,)")
     }
     if !store.layout.isWide {
       ToolbarItem(placement: .principal) {
