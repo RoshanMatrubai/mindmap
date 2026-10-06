@@ -20,6 +20,7 @@ Rules for every coding agent working in this repo. Read this first; details live
 | `make ipad-run` | Boots the simulator (`SIM="<name>"`, default "iPad Pro 12.9 M1" if it exists, else "iPad Pro 13-inch (M5)"), installs and launches "mindmap dev" (`ARGS="-fixture sample"`) |
 | `make ipad-stop` | Quits "mindmap dev" in the booted simulator |
 | `make ipad-screenshot` | Captures the booted simulator's screen to `build/ipad-screenshot.png` |
+| `make ipad-install` | For the user only: Release build on a connected iPad (`DEVICE="<name>"`); agents never run it |
 | `make ipad-logs` | Last 2 minutes of the dev app's `os.Logger` output in the simulator (`LAST=15m` for longer) |
 
 All build output goes to `build/` (gitignored). Requires Xcode 26+.
@@ -52,7 +53,7 @@ User data never lives in the repo, and agents never touch the real user's data. 
 - Never read, list or search `~/Documents`, `~/Desktop`, `~/Downloads` or `~/Library/Mobile Documents` (iCloud Drive). If a command triggers a macOS "would like to access files" prompt, stop and tell the user; they will click Don't Allow.
 - Never run disk-wide or home-wide searches (find /, find ~, grep -r ~, mdfind without -onlyin). Scope every search to the repo, the build folder, or a specific system path like /Applications/Xcode.app.
 - Never touch the release container: no command may mention `~/Library/Containers/io.github.roshanmatrubai.mindmap` (the `.dev` one is fine).
-- Never launch the Release build (`make install`, `/Applications/mindmap.app`), on the Mac or in a simulator.
+- Never launch the Release build (`make install`, `make ipad-install`, `/Applications/mindmap.app`), on the Mac, in a simulator or on a device.
 - Never run `make check-isolation`; it's for the user.
 - Never capture any window but the dev app's (`make screenshot`, or `make ipad-screenshot` for the simulator; no full-screen or other-app captures).
 - Never hand-edit `mindmap.xcodeproj/project.pbxproj` unless the task explicitly requires it. New files in `App/Shared`, `App/Mac` and `App/iPad` are picked up automatically; build settings go in `Config/*.xcconfig`.

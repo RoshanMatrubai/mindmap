@@ -26,7 +26,7 @@ IPAD_DEV_APP := $(PRODUCTS)/Debug-iphonesimulator/$(DEV_NAME).app
 SIM ?= $(shell xcrun simctl list devices available | grep -qF "    iPad Pro 12.9 M1 " && echo "iPad Pro 12.9 M1" || echo "iPad Pro 13-inch (M5)")
 
 .PHONY: build run stop screenshot logs install check-isolation test preview lint format clean icon \
-	ipad-build ipad-run ipad-stop ipad-screenshot ipad-logs
+	ipad-build ipad-run ipad-stop ipad-screenshot ipad-logs ipad-install
 
 build:
 	$(XCODEBUILD) -configuration $(CONFIG) build
@@ -75,6 +75,17 @@ ipad-screenshot:
 LAST ?= 2m
 ipad-logs:
 	xcrun simctl spawn booted log show $(if $(SINCE),--start "$(SINCE)",--last $(LAST)) --style compact --predicate 'subsystem == "$(DEV_ID)"'
+
+# For the human only: the Release iPad app on a connected iPad, signed by Xcode with the team in
+# Config/Local.xcconfig (a free Personal Team works; reinstall every 7 days). DEVICE=<name> picks one.
+IPAD_DEVICE_APP := $(PRODUCTS)/Release-iphoneos/mindmap.app
+ipad-install:
+	@grep -qs '^DEVELOPMENT_TEAM *= *[A-Z0-9]' Config/Local.xcconfig || { echo "set DEVELOPMENT_TEAM in Config/Local.xcconfig first (see Config/Local.xcconfig.example)"; exit 1; }
+	@mkdir -p build && xcrun devicectl list devices --json-output build/devices.json >/dev/null 2>&1 || { echo "devicectl couldn't list devices (Xcode 26 needed)"; exit 1; }
+	@id=$$(swift scripts/ipad-device.swift build/devices.json "$(DEVICE)") || exit 1; \
+	xcodebuild -scheme mindmap-ipad -destination 'generic/platform=iOS' $(XCODEBUILD_FLAGS) -configuration Release -allowProvisioningUpdates build && \
+	xcrun devicectl device install app --device $$id "$(IPAD_DEVICE_APP)" && \
+	echo "installed mindmap on the iPad. if it won't open: Settings > General > VPN & Device Management > trust your developer certificate"
 
 install:
 	$(MAKE) build CONFIG=Release SIGNING=configured

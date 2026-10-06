@@ -14,8 +14,8 @@
       let select = defaults.string(forKey: "select-node")
       let menu = defaults.string(forKey: "show-menu")
       let layoutOnly =
-        defaults.string(forKey: "pane") != nil
-        || defaults.string(forKey: "orientation") != nil
+        (defaults.string(forKey: "pane") != nil || defaults.string(forKey: "orientation") != nil)
+        && defaults.string(forKey: "open-settings") == nil && !defaults.bool(forKey: "show-forces")
       guard select != nil || menu != nil || layoutOnly, !staged else { return }
       staged = true
       Task {
@@ -81,6 +81,23 @@
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
         scene?.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { error in
           log.error("orientation: \(error.localizedDescription, privacy: .public)")
+        }
+      }
+      if let tab = defaults.string(forKey: "open-settings")?.lowercased() {
+        store.layout.settingsTab = tab == "text" ? .text : .graph
+        Task {
+          try? await Task.sleep(for: .seconds(2))
+          store.layout.showingSettings = true
+          try? await Task.sleep(for: .milliseconds(900))
+          log.notice("debug stage ready: settings \(tab, privacy: .public)")
+        }
+      }
+      if defaults.bool(forKey: "show-forces") {
+        Task {
+          try? await Task.sleep(for: .seconds(2))
+          store.layout.showingForces = true
+          try? await Task.sleep(for: .milliseconds(900))
+          log.notice("debug stage ready: forces")
         }
       }
       guard defaults.bool(forKey: "focus-editor") else { return }

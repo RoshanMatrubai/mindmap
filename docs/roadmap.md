@@ -20,7 +20,7 @@ A native iPadOS app (UIKit + SwiftUI, not Mac Catalyst), iPadOS 17+, iPad only, 
 **i2. Touch graph (done):** the store split into `App/Shared` (`MapStore`) and `App/Mac` (`MacMapStore`); tap to select, drag nodes (⇧ or "Move Branch" for subtrees), pan, pinch, long-press menus, inline naming, pointer hover, the detail panel; motion pauses when the scene goes to the background. A DEBUG touch smoke harness runs in CI on a simulator. Gestures in [design.md](design.md#ipad-touch-step-i2).
 **i3. Editor and layout (done):** the outline editor (TextKit 2 `UITextView`) on the shared `MapStore` with the Mac's rules and colors, a keyboard bar, the Mac's shortcuts from the shared `AppCommand` table, side by side in wide windows and a Text / Map switch in narrow ones, map switching and a folder picker for Release. Details in [design.md](design.md#ipad-editor-and-layout-step-i3).
 **i4. iCloud Drive sync (done):** the same user-picked maps folder in iCloud Drive on the Mac and the iPad at once: file presenters and coordinated reads and writes, reload in place, conflict copies, not yet downloaded maps, synced layout sidecars. Details in [design.md](design.md#icloud-drive-sync-step-i4).
-**i5. Polish and device install:** keyboard and pointer shortcuts, multitasking sizes, energy check on a ProMotion iPad, signed install on a device with the Personal Team.
+**i5. Polish and device install (done):** the settings sheet (⌘,, Graph and Text tabs, per device), the forces popover (⌥⌘F), the Mac's menu groups, the app icon, and `make ipad-install` for a signed install with the Personal Team (README "on ipad"). Still to measure on a real ProMotion iPad: energy when idle.
 
 ## Planned shortcuts
 

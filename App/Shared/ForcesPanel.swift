@@ -2,11 +2,11 @@ import MindmapCore
 import MindmapGraph
 import SwiftUI
 
-/// Prototype `#forces`: floating top left in the graph pane. Edits the same preferences as the
-/// Settings window, live in both directions. Force changes reshuffle about 200 ms after the
+/// Prototype `#forces`: floating top left in the Mac's graph pane, a popover on the iPad. Edits
+/// the same preferences as the settings, live in both directions. Force changes reshuffle about 200 ms after the
 /// slider stops (MapStore); label size and font only push new overlaps apart.
 struct ForcesPanel: View {
-  @Bindable var store: MacMapStore
+  @Bindable var store: MapStore
 
   var body: some View {
     VStack(alignment: .leading, spacing: 7) {
@@ -27,8 +27,8 @@ struct ForcesPanel: View {
       UrgencyPicker(selection: $store.preferences.forces.urgency)
         .controlSize(.mini)
       HStack(spacing: 6) {
-        Button("reshuffle") { AppCommand.reshuffle.perform(store) }
-          .disabled(AppCommand.reshuffle.isDisabled(store))
+        Button("reshuffle") { store.reshuffle() }
+          .disabled(store.currentURL == nil)
         Button("animate: \(store.preferences.animateSettle ? "on" : "off")") {
           store.preferences.animateSettle.toggle()
         }
@@ -88,7 +88,7 @@ struct UrgencyPicker: View {
 
 /// A popup of every family, grouped like the Settings window's previewed list.
 struct FontPicker: View {
-  @Bindable var store: MacMapStore
+  @Bindable var store: MapStore
   let label: String
 
   var body: some View {
