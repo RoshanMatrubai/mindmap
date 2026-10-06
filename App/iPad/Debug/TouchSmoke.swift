@@ -207,6 +207,7 @@
       await editorChecks(store, view)
       await shortcutChecks(store, view)
       await layoutChecks(store, view)
+      await syncChecks(store, view)
       _ = await wait("text autosave finishes") { !store.hasUnsavedEdits }
       let created = store.currentURL
       store.switchMap(original)
@@ -220,7 +221,6 @@
       if let created {
         do {
           try FileManager.default.removeItem(at: created)
-          try ReminderSidecar.remove(for: created)
           let sidecar = LayoutSidecar.url(for: created)
           if FileManager.default.fileExists(atPath: sidecar.path) {
             try FileManager.default.removeItem(at: sidecar)
