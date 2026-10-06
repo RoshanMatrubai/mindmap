@@ -3,7 +3,7 @@ import AppKit
 /// Let the final debounced write finish before a normal Quit.
 @MainActor
 final class AppLifecycle: NSObject, NSApplicationDelegate {
-  static weak var store: MapStore?
+  static weak var store: MacMapStore?
 
   /// ⌘+ (⇧⌘= or keypad +) also zooms in; a menu item can hold only one of ⌘= and ⌘+.
   func applicationDidFinishLaunching(_ notification: Notification) {

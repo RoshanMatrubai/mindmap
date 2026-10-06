@@ -54,3 +54,65 @@ jobs:
             git status --porcelain
             exit 1
           fi
+
+  ipad-smoke:
+    # The touch harness (App/iPad/Debug/TouchSmoke.swift) drives every gesture through DEBUG hooks
+    # in a booted simulator, then three launch hooks stage screenshots. The Mac smoke harness needs
+    # a frontmost window, so it stays a local run.
+    name: iPad simulator smoke (touch harness and screenshots)
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - name: Pick an iPad simulator
+        run: |
+          xcrun simctl list devices available
+          list=$(xcrun simctl list devices available)
+          name() { sed -E 's/^ +//; s/ \([0-9A-F]{8}-[0-9A-F-]{27}\) \(.*$//' | head -1; }
+          sim=$(echo "$list" | grep -E '^ +iPad Pro ' | name)
+          [ -n "$sim" ] || sim=$(echo "$list" | grep -E '^ +iPad ' | name)
+          [ -n "$sim" ] || { echo "no iPad simulator on this runner"; exit 1; }
+          echo "Using simulator: $sim"
+          echo "SIM=$sim" >> "$GITHUB_ENV"
+      - name: Touch smoke harness
+        run: |
+          mkdir -p build/ipad-artifacts
+          make ipad-run SIM="$SIM" ARGS="-fixture sample -editor-smoke YES"
+          log=build/ipad-artifacts/ipad-smoke.log
+          for i in $(seq 1 90); do
+            make -s ipad-logs LAST=20m > "$log" 2>&1 || true
+            grep -q "touch smoke complete" "$log" && break
+            sleep 10
+          done
+          grep -E "smoke (PASS|FAIL)|touch smoke complete" "$log" || true
+          grep -q "touch smoke complete" "$log" || { echo "::error::the harness never finished"; exit 1; }
+          if grep -q "smoke FAIL" "$log"; then
+            grep "smoke FAIL" "$log" | sed 's/^/::error::/'
+            exit 1
+          fi
+          grep "touch smoke complete" "$log"
+      - name: Screenshots (selected branch, long-press menu, mid-rename)
+        if: always()
+        run: |
+          stage() {
+            make ipad-run SIM="$SIM" ARGS="-fixture sample $2"
+            for i in $(seq 1 30); do
+              make -s ipad-logs > build/stage.log 2>&1 || true
+              grep -q "debug stage ready: $3" build/stage.log && break
+              sleep 2
+            done
+            grep "debug stage ready" build/stage.log || echo "::warning::stage $1 not reported"
+            make ipad-screenshot && cp build/ipad-screenshot.png "build/ipad-artifacts/$1.png"
+          }
+          stage selected-branch "-select-node garden" "select garden"
+          stage long-press-menu "-show-menu 'fix the fence'" "menu fix the fence"
+          stage mid-rename "-select-node 'plant herbs' -rename-node YES" "rename plant herbs"
+          make ipad-logs LAST=10m > build/ipad-artifacts/ipad-screenshots.log 2>&1 || true
+          make ipad-stop
+      - name: Upload log and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ipad-smoke
+          path: build/ipad-artifacts
+          if-no-files-found: warn

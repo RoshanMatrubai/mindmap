@@ -28,5 +28,29 @@
       }
       return text
     }
+
+    /// Logs milliseconds since the process started, once per stage (launch-time measurements).
+    @MainActor static func logLaunch(_ stage: String) {
+      guard !launchStages.contains(stage) else { return }
+      launchStages.insert(stage)
+      var info = kinfo_proc()
+      var size = MemoryLayout<kinfo_proc>.stride
+      var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
+      guard sysctl(&mib, 4, &info, &size, nil, 0) == 0 else { return }
+      let start = info.kp_proc.p_starttime
+      let started = Double(start.tv_sec) + Double(start.tv_usec) / 1e6
+      let ms = (Date().timeIntervalSince1970 - started) * 1000
+      log.notice("launch \(stage, privacy: .public) ms=\(ms, privacy: .public)")
+    }
+    @MainActor private static var launchStages = Set<String>()
+
+    /// Without `-use-folder-picker YES`, maps go in a folder inside the dev container: no picker,
+    /// no prompts, so the agent debug loop runs unattended. With it, Debug behaves like Release.
+    static var containerMapsFolder: URL? {
+      guard !UserDefaults.standard.bool(forKey: "use-folder-picker") else { return nil }
+      let url = URL.applicationSupportDirectory.appending(path: "maps")
+      try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+      return url
+    }
   }
 #endif

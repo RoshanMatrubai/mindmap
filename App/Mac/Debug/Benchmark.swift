@@ -10,7 +10,7 @@
   /// Release builds.
   @MainActor
   enum Benchmark {
-    static func runIfRequested(_ store: MapStore) {
+    static func runIfRequested(_ store: MacMapStore) {
       guard UserDefaults.standard.bool(forKey: "bench") else { return }
       Task { await run(store) }
     }
@@ -18,7 +18,7 @@
     private static let signposts = OSLog(
       subsystem: Bundle.main.bundleIdentifier!, category: "motion")
 
-    private static func run(_ store: MapStore) async {
+    private static func run(_ store: MacMapStore) async {
       guard
         await until({
           !store.isSwitching && store.graphView?.scene.layout?.model.nodeCount == 500

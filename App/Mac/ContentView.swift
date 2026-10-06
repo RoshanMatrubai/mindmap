@@ -3,7 +3,7 @@ import MindmapCore
 import SwiftUI
 
 struct ContentView: View {
-  @Bindable var store: MapStore
+  @Bindable var store: MacMapStore
   @Environment(\.openSettings) private var openSettings
 
   var body: some View {

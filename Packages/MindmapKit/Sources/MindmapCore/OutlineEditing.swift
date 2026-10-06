@@ -8,6 +8,12 @@ public struct TextChange: Equatable, Sendable {
   public let range: NSRange
   public let replacement: String
   public let selection: NSRange
+
+  public init(range: NSRange, replacement: String, selection: NSRange) {
+    self.range = range
+    self.replacement = replacement
+    self.selection = selection
+  }
 }
 
 public enum OutlineEditing {
