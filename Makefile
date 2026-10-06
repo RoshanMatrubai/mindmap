@@ -60,7 +60,9 @@ ipad-run:
 	@udid=$$(xcrun simctl list devices available | grep -F "    $(SIM) (" | head -1 | grep -oE '[0-9A-F]{8}(-[0-9A-F]{4}){3}-[0-9A-F]{12}'); \
 	if [ -z "$$udid" ]; then echo "no simulator named $(SIM); pass SIM=\"<name>\" (xcrun simctl list devices)"; exit 1; fi; \
 	xcrun simctl boot $$udid 2>/dev/null; xcrun simctl bootstatus $$udid -b >/dev/null && \
-	{ open -b com.apple.iphonesimulator 2>/dev/null || true; } && \
+	{ open -b com.apple.iphonesimulator 2>/dev/null \
+	  || open "$$(xcode-select -p)/../Applications/DeviceHub.app" 2>/dev/null \
+	  || echo "the app runs headless (no Simulator.app or DeviceHub.app opened); to see it: open \"$$(xcode-select -p)/../Applications/DeviceHub.app\""; } && \
 	xcrun simctl terminate $$udid $(DEV_ID) 2>/dev/null; \
 	xcrun simctl install $$udid "$(IPAD_DEV_APP)" && \
 	xcrun simctl launch $$udid $(DEV_ID) $(ARGS)
@@ -77,14 +79,16 @@ ipad-logs:
 	xcrun simctl spawn booted log show $(if $(SINCE),--start "$(SINCE)",--last $(LAST)) --style compact --predicate 'subsystem == "$(DEV_ID)"'
 
 # For the human only: the Release iPad app on a connected iPad, signed by Xcode with the team in
-# Config/Local.xcconfig (a free Personal Team works; reinstall every 7 days). DEVICE=<name> picks one.
+# Config/Local.xcconfig (a free Personal Team works; reinstall every 7 days). Builds for that device's
+# UDID, so -allowProvisioningUpdates registers it with the team. DEVICE=<name or UDID> picks one.
 IPAD_DEVICE_APP := $(PRODUCTS)/Release-iphoneos/mindmap.app
 ipad-install:
 	@grep -qs '^DEVELOPMENT_TEAM *= *[A-Z0-9]' Config/Local.xcconfig || { echo "set DEVELOPMENT_TEAM in Config/Local.xcconfig first (see Config/Local.xcconfig.example)"; exit 1; }
 	@mkdir -p build && xcrun devicectl list devices --json-output build/devices.json >/dev/null 2>&1 || { echo "devicectl couldn't list devices (Xcode 26 needed)"; exit 1; }
-	@id=$$(swift scripts/ipad-device.swift build/devices.json "$(DEVICE)") || exit 1; \
-	xcodebuild -scheme mindmap-ipad -destination 'generic/platform=iOS' $(XCODEBUILD_FLAGS) -configuration Release -allowProvisioningUpdates build && \
-	xcrun devicectl device install app --device $$id "$(IPAD_DEVICE_APP)" && \
+	@ids=$$(swift scripts/ipad-device.swift build/devices.json "$(DEVICE)") || exit 1; \
+	udid=$${ids% *}; device=$${ids#* }; \
+	xcodebuild -scheme mindmap-ipad -destination "platform=iOS,id=$$udid" $(XCODEBUILD_FLAGS) -configuration Release -allowProvisioningUpdates build && \
+	xcrun devicectl device install app --device $$device "$(IPAD_DEVICE_APP)" && \
 	echo "installed mindmap on the iPad. if it won't open: Settings > General > VPN & Device Management > trust your developer certificate"
 
 install:

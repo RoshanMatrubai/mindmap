@@ -499,8 +499,8 @@
       before = view.scene.camera
       view.debugWheel(by: -500, about: pointer)
       check(
-        abs(view.scene.camera.zoom / before.zoom - 1 / pow(1.12, 3.5)) < 1e-9,
-        "mouse wheel down zooms out, at most 1.5× per event")
+        abs(view.scene.camera.zoom / before.zoom - 1 / 1.12) < 1e-9,
+        "mouse wheel down zooms out, at most one notch per event")
       // Pinch about its center.
       let anchor = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
       before = view.scene.camera
@@ -516,6 +516,41 @@
       check(abs(view.scene.camera.zoom - limits.upperBound) < 1e-9, "pinch stops at 10× fit all")
       view.debugPinch(by: 1e-6, about: anchor)
       check(abs(view.scene.camera.zoom - limits.lowerBound) < 1e-9, "pinch stops at 1/10 fit all")
+      // A real pinch frame by frame: the fingers move, then one lifts before the other.
+      view.fitAll()
+      await cameraIdle(view)
+      let start = view.scene.camera
+      let content = start.toWorld(anchor)
+      let moved = CGPoint(x: anchor.x + 10, y: anchor.y - 6)
+      view.debugPinchFrame(centroid: anchor, scale: 1, touches: 2)
+      view.debugPinchFrame(centroid: moved, scale: 1.2, touches: 2)
+      let pinched = view.scene.camera
+      let shown = pinched.toScreen(content)
+      check(
+        hypot(shown.x - moved.x, shown.y - moved.y) < 1e-6
+          && abs(pinched.zoom / start.zoom - 1.2) < 1e-9,
+        "pinch keeps the content under the fingers as they move")
+      view.debugPinchFrame(
+        centroid: CGPoint(x: moved.x + 160, y: moved.y + 90), scale: 1, touches: 1)
+      check(view.scene.camera == pinched, "the first finger lifting moves nothing")
+      view.debugPinchFrame(
+        centroid: CGPoint(x: moved.x + 170, y: moved.y + 95), scale: 1.01, touches: 1)
+      check(view.scene.camera == pinched, "one finger left in a pinch moves nothing")
+      view.debugPinchFrame(centroid: .zero, scale: 1, touches: nil)
+      check(view.scene.camera == pinched, "lifting the last finger moves nothing")
+      // A two-finger pan that loses a finger: nothing on that frame, then a pan from zero.
+      if let spot = target(view, nil) {
+        let before = view.scene.camera
+        view.debugTouchDown(at: spot, fingers: 2)
+        view.debugTouchMove(to: CGPoint(x: spot.x + 80, y: spot.y + 40), touches: 1)
+        check(view.scene.camera == before, "a finger lifting mid-pan moves nothing")
+        view.debugTouchMove(to: CGPoint(x: spot.x + 100, y: spot.y + 40), touches: 1)
+        let after = view.scene.camera
+        check(
+          abs(after.offset.x - before.offset.x - 20) < 1e-6 && after.offset.y == before.offset.y,
+          "the finger left down pans from zero")
+        view.debugTouchUp()
+      }
       check(view.scene.layout?.nodes == positions, "pan and pinch never move nodes")
       check(
         !view.isAnimating && GraphView.debugLiveDisplayLinks == 0,
@@ -641,8 +676,8 @@
       guard let parent = index(view, "Parent"), let p = target(view, parent),
         let empty = target(view, nil)
       else { return check(false, "pointer targets exist") }
-      check(view.debugHoverNode(at: p) == parent, "pointer hover finds the node")
-      check(view.debugHoverNode(at: empty) == nil, "pointer hover over empty canvas")
+      check(view.debugHoverNode(at: p) == parent, "pointer hover hit test finds the node")
+      check(view.debugHoverNode(at: empty) == nil, "pointer hover hit test over empty canvas")
       // Detail panel fields, the done checkbox and linked names (the panel's own actions).
       guard let linker = index(view, "Linker"), let distant = index(view, "Distant"),
         let leaf = index(view, "Far leaf"), let second = index(view, "Second"),

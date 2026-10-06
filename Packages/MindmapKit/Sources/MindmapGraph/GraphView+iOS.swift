@@ -2,6 +2,7 @@
   import MindmapCore
   import QuartzCore
   import UIKit
+  import os
 
   /// One entry of the graph's long-press menu. The menu is built from these, so the DEBUG smoke
   /// harness runs exactly the actions the system menu shows.
@@ -17,10 +18,10 @@
   /// The iPad graph pane: the shared scene with touch, pointer and trackpad input. Tap selects,
   /// double-tap renames (or adds a group on empty canvas), a one-finger drag moves a node (⇧ or
   /// "Move Branch" brings its subtree) or pans, two fingers pan, pinch zooms, long-press opens
-  /// the context menu. Motion and the camera live in the shared `GraphController`; the drag rules
-  /// are the Mac's (the same `drag` and `drop`).
+  /// the context menu. Like the Mac, nodes have no hover effect. Motion and the camera live in
+  /// the shared `GraphController`; the drag rules are the Mac's (the same `drag` and `drop`).
   public final class GraphView: UIView, UIGestureRecognizerDelegate,
-    UIContextMenuInteractionDelegate, UIPointerInteractionDelegate, UITextFieldDelegate
+    UIContextMenuInteractionDelegate, UITextFieldDelegate
   {
     public let controller = GraphController()
     public var scene: GraphScene { controller.scene }
@@ -74,6 +75,18 @@
     static let doubleTapDistance = 30.0
 
     private var press: (point: CGPoint, camera: Camera, node: Int?, grab: CGPoint, subtree: Bool)?
+    /// Touches down when the press was last based; a change re-bases a node drag.
+    private var pressTouches = 1
+    /// The last pinch and canvas-pan samples. Each update moves the camera by the change since
+    /// the last sample (`Camera.gestureStep`), never from an absolute location, so a finger
+    /// that lifts or lands, moving the centroid, moves nothing.
+    private var pinchSample: (centroid: CGPoint, touches: Int)?
+    private var panSample: (centroid: CGPoint, touches: Int)?
+    #if DEBUG
+      private let inputLog = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "mindmap-preview", category: "app")
+      private var hovered: Int?
+    #endif
     private var lastTap: (time: TimeInterval, point: CGPoint, node: Int?, world: CGPoint)?
     /// "Move Branch" armed for this node (a path key, so a rebuild can't shift it).
     private var branchKey: String?
@@ -262,7 +275,11 @@
       pinch.delegate = self
       addGestureRecognizer(pinch)
       addInteraction(UIContextMenuInteraction(delegate: self))
-      addInteraction(UIPointerInteraction(delegate: self))
+      #if DEBUG
+        // Logs only (hover enter and exit), to compare with device reports; changes nothing.
+        addGestureRecognizer(
+          UIHoverGestureRecognizer(target: self, action: #selector(hoverRecognized(_:))))
+      #endif
     }
 
     public func gestureRecognizer(
@@ -294,15 +311,15 @@
 
     @objc private func panRecognized(_ recognizer: UIPanGestureRecognizer) {
       let p = recognizer.location(in: self)
+      let touches = recognizer.numberOfTouches
       switch recognizer.state {
       case .began:
         let t = recognizer.translation(in: self)
         touchDown(
           at: CGPoint(x: p.x - t.x, y: p.y - t.y),
-          shift: recognizer.modifierFlags.contains(.shift),
-          fingers: recognizer.numberOfTouches)
-        touchMoved(to: p)
-      case .changed: touchMoved(to: p)
+          shift: recognizer.modifierFlags.contains(.shift), fingers: touches)
+        touchMoved(to: p, touches: touches)
+      case .changed: touchMoved(to: p, touches: touches)
       case .ended, .cancelled, .failed: touchUp()
       default: break
       }
@@ -310,7 +327,13 @@
 
     @objc private func scrollRecognized(_ recognizer: UIPanGestureRecognizer) {
       guard recognizer.state == .began || recognizer.state == .changed else { return }
-      pan(by: recognizer.translation(in: self))
+      let delta = recognizer.translation(in: self)
+      #if DEBUG
+        inputLog.notice(
+          "scroll continuous dx=\(delta.x, privacy: .public) dy=\(delta.y, privacy: .public) pans"
+        )
+      #endif
+      pan(by: delta)
       recognizer.setTranslation(.zero, in: self)
     }
 
@@ -321,8 +344,28 @@
     }
 
     @objc private func pinchRecognized(_ recognizer: UIPinchGestureRecognizer) {
-      guard recognizer.state == .began || recognizer.state == .changed else { return }
-      pinch(by: recognizer.scale, about: recognizer.location(in: self))
+      let centroid = recognizer.location(in: self)
+      // A trackpad pinch through the pointer reports no touches; its centroid is the pointer,
+      // which doesn't jump, so it counts as two fingers.
+      let touches = recognizer.numberOfTouches == 0 ? 2 : recognizer.numberOfTouches
+      switch recognizer.state {
+      case .began:
+        #if DEBUG
+          inputLog.notice(
+            "pinch began touches=\(recognizer.numberOfTouches, privacy: .public) scale=\(recognizer.scale, privacy: .public)"
+          )
+        #endif
+        finishNaming(commit: true)
+        pinchSample = nil
+        pinchFrame(centroid: centroid, scale: recognizer.scale, touches: touches)
+      case .changed:
+        pinchFrame(centroid: centroid, scale: recognizer.scale, touches: touches)
+      default:
+        // Ended or cancelled: the camera stays where the last two-finger frame put it. Nothing
+        // from the lift frame, no inertia, and a finger left down pans from zero.
+        pinchSample = nil
+        panSample = nil
+      }
       recognizer.scale = 1
     }
 
@@ -372,25 +415,45 @@
         subtree = subtree || layout.model.nodes[node].pathKey == branchKey
       }
       press = (point, camera, node, grab, subtree)
+      pressTouches = fingers
+      panSample = (point, fingers)
     }
 
-    func touchMoved(to point: CGPoint) {
+    /// `touches` is how many fingers are down; nil keeps the press's count (DEBUG hooks).
+    func touchMoved(to point: CGPoint, touches: Int? = nil) {
       guard let press else { return }
+      let touches = touches ?? pressTouches
       if let node = press.node {
+        // Another finger landed or lifted, moving the centroid: hold the node still for this
+        // frame and carry on from here, rather than jump to the new centroid.
+        if touches != pressTouches, let layout = scene.layout {
+          let camera = scene.visibleCamera
+          let n = layout.nodes[node]
+          let w = camera.toWorld(point)
+          self.press = (point, camera, node, CGPoint(x: n.x - w.x, y: n.y - w.y), press.subtree)
+          pressTouches = touches
+          return
+        }
         let w = press.camera.toWorld(point)
         controller.drag(
           node, to: LayoutPoint(x: w.x + press.grab.x, y: w.y + press.grab.y),
           subtree: press.subtree)
       } else {
-        // Relative to the visible camera, so a pinch at the same time composes with it.
+        let previous = panSample ?? (point, touches)
+        panSample = (point, touches)
+        // A pinch owns the camera (it pans with the fingers too) while it runs.
+        guard pinchSample == nil else { return }
         let camera = scene.visibleCamera
-        let shown = camera.toScreen(press.camera.toWorld(press.point))
-        controller.move(camera.panned(by: CGPoint(x: point.x - shown.x, y: point.y - shown.y)))
+        let next = camera.gestureStep(
+          from: previous.centroid, to: point, scale: 1, touches: touches,
+          previousTouches: previous.touches, minimumTouches: 1, limits: controller.limits)
+        if next != camera { controller.move(next) }
       }
     }
 
     /// Lets go: a dragged node is pinned where it is shown and the graph settles around it.
     func touchUp() {
+      panSample = nil
       defer { press = nil }
       guard let press, let node = press.node, let layout = scene.layout else { return }
       if press.subtree { branchKey = nil }
@@ -407,22 +470,38 @@
       controller.move(scene.visibleCamera.panned(by: delta))
     }
 
-    /// A mouse wheel: `delta` points of scroll (positive scrolls up) zoom about the pointer by
-    /// the Mac's wheel rule, 12% per 10 points, at most 1.5× per event.
+    /// A mouse wheel: `delta` points of discrete scroll (positive scrolls up) zoom about the
+    /// pointer, one Mac notch (12%) per event at most (`ScrollZoom.iPadWheel`).
     func wheel(by delta: Double, about point: CGPoint) {
+      let factor = ScrollZoom.iPadWheel(delta)
+      #if DEBUG
+        inputLog.notice(
+          "scroll discrete dy=\(delta, privacy: .public) zoom=\(factor, privacy: .public)")
+      #endif
       guard delta != 0 else { return }
       finishNaming(commit: true)
       controller.move(
-        scene.visibleCamera.zoomed(
-          by: GraphController.wheelZoom(delta, precise: true), about: point,
-          limits: controller.limits))
+        scene.visibleCamera.zoomed(by: factor, about: point, limits: controller.limits))
+    }
+
+    /// One pinch frame: the content under the fingers stays under them while two are down;
+    /// a frame with fewer, or where the count changed, leaves the camera alone.
+    func pinchFrame(centroid: CGPoint, scale: Double, touches: Int) {
+      let previous = pinchSample ?? (centroid, touches)
+      pinchSample = (centroid, touches)
+      let camera = scene.visibleCamera
+      let next = camera.gestureStep(
+        from: previous.centroid, to: centroid, scale: scale, touches: touches,
+        previousTouches: previous.touches, limits: controller.limits)
+      if next != camera { controller.move(next) }
     }
 
     /// Pinch: zoom about the pinch center within the Mac's limits (1/10 to 10× fit all).
     func pinch(by factor: Double, about point: CGPoint) {
       finishNaming(commit: true)
-      controller.move(
-        scene.visibleCamera.zoomed(by: factor, about: point, limits: controller.limits))
+      pinchSample = nil
+      pinchFrame(centroid: point, scale: factor, touches: 2)
+      pinchSample = nil
     }
 
     // MARK: Selection
@@ -579,34 +658,31 @@
       return UITargetedPreview(view: menuAnchor, parameters: parameters)
     }
 
-    // MARK: Pointer
+    // MARK: Hover
 
-    /// The node under the pointer, if any: hovering hugs its dot.
+    /// The node under the pointer, if any (DEBUG hover logs and the smoke harness).
     func hoverNode(at point: CGPoint) -> Int? {
       press == nil ? scene.node(at: point, radius: 14) : nil
     }
 
-    public func pointerInteraction(
-      _ interaction: UIPointerInteraction, regionFor request: UIPointerRegionRequest,
-      defaultRegion: UIPointerRegion
-    ) -> UIPointerRegion? {
-      guard let index = hoverNode(at: request.location), let n = scene.layout?.nodes[index] else {
-        return defaultRegion
+    #if DEBUG
+      /// Logs hover enter and exit with the node and its on-screen rect. Reads only.
+      @objc private func hoverRecognized(_ recognizer: UIHoverGestureRecognizer) {
+        let node =
+          recognizer.state == .ended || recognizer.state == .cancelled
+          ? nil : hoverNode(at: recognizer.location(in: self))
+        guard node != hovered else { return }
+        if let old = hovered { inputLog.notice("hover exit node=\(old, privacy: .public)") }
+        hovered = node
+        guard let node, let n = scene.layout?.nodes[node] else { return }
+        let camera = scene.visibleCamera
+        let a = camera.toScreen(CGPoint(x: n.x - n.halfWidth, y: n.y - n.up))
+        let b = camera.toScreen(CGPoint(x: n.x + n.halfWidth, y: n.y + n.down))
+        inputLog.notice(
+          "hover enter node=\(node, privacy: .public) rect=\(Int(a.x), privacy: .public),\(Int(a.y), privacy: .public) \(Int(b.x - a.x), privacy: .public)x\(Int(b.y - a.y), privacy: .public)"
+        )
       }
-      let c = scene.camera.toScreen(CGPoint(x: n.x, y: n.y))
-      let r = max(n.radius * scene.camera.zoom, 6) + 6
-      return UIPointerRegion(
-        rect: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2),
-        identifier: NSNumber(value: index))
-    }
-
-    public func pointerInteraction(
-      _ interaction: UIPointerInteraction, styleFor region: UIPointerRegion
-    ) -> UIPointerStyle? {
-      guard region.identifier is NSNumber else { return nil }
-      return UIPointerStyle(
-        shape: .roundedRect(region.rect, radius: region.rect.width / 2), constrainedAxes: [])
-    }
+    #endif
 
     // MARK: Naming on the graph
 
@@ -720,7 +796,18 @@
       public func debugTouchDown(at point: CGPoint, shift: Bool = false, fingers: Int = 1) {
         touchDown(at: point, shift: shift, fingers: fingers)
       }
-      public func debugTouchMove(to point: CGPoint) { touchMoved(to: point) }
+      public func debugTouchMove(to point: CGPoint, touches: Int? = nil) {
+        touchMoved(to: point, touches: touches)
+      }
+      /// One frame of a real pinch, with its touch count; `nil` ends it.
+      public func debugPinchFrame(centroid: CGPoint, scale: Double, touches: Int?) {
+        if let touches {
+          pinchFrame(centroid: centroid, scale: scale, touches: touches)
+        } else {
+          pinchSample = nil
+          panSample = nil
+        }
+      }
       public func debugTouchUp() { touchUp() }
       public func debugPan(by delta: CGPoint) { pan(by: delta) }
       public func debugWheel(by delta: Double, about point: CGPoint) {

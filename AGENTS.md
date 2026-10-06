@@ -17,10 +17,10 @@ Rules for every coding agent working in this repo. Read this first; details live
 | `make logs` | Last 2 minutes of the dev app's `os.Logger` output |
 | `make clean` | Deletes `build/` |
 | `make ipad-build` | iPad app build for the iOS Simulator (`CONFIG=Release` for Release); no signing needed |
-| `make ipad-run` | Boots the simulator (`SIM="<name>"`, default "iPad Pro 12.9 M1" if it exists, else "iPad Pro 13-inch (M5)"), installs and launches "mindmap dev" (`ARGS="-fixture sample"`) |
+| `make ipad-run` | Boots the simulator (`SIM="<name>"`, default "iPad Pro 12.9 M1" if it exists, else "iPad Pro 13-inch (M5)"), opens a viewer (Simulator.app, or Device Hub on Xcode 27, which has no Simulator.app), installs and launches "mindmap dev" (`ARGS="-fixture sample"`) |
 | `make ipad-stop` | Quits "mindmap dev" in the booted simulator |
 | `make ipad-screenshot` | Captures the booted simulator's screen to `build/ipad-screenshot.png` |
-| `make ipad-install` | For the user only: Release build on a connected iPad (`DEVICE="<name>"`); agents never run it |
+| `make ipad-install` | For the user only: Release build on a connected iPad, registered with the team (`DEVICE="<name or UDID>"`); agents never run it |
 | `make ipad-logs` | Last 2 minutes of the dev app's `os.Logger` output in the simulator (`LAST=15m` for longer) |
 
 All build output goes to `build/` (gitignored). Requires Xcode 26+.

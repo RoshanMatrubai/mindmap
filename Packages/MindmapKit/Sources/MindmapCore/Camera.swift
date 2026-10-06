@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 
 /// Maps world units to view points (both y down): screen = world × zoom + offset.
 public struct Camera: Sendable, Equatable {
@@ -67,5 +68,45 @@ extension GraphLayout {
           x: $1.x - $1.halfWidth, y: $1.y - $1.up, width: $1.halfWidth * 2, height: $1.up + $1.down)
       )
     }
+  }
+}
+
+extension Camera {
+  /// One update of a touch gesture: a pinch, or with `minimumTouches: 1` a pan. The content point
+  /// under `previousCentroid` moves to `centroid` and the zoom changes by `scale` about it, so it
+  /// stays under the fingers. The camera stays exactly where it is when fewer than
+  /// `minimumTouches` touches are down, or on a frame where the touch count changed: a lifted
+  /// (or added) finger moves the centroid without the content moving under the fingers.
+  public func gestureStep(
+    from previousCentroid: CGPoint, to centroid: CGPoint, scale: Double, touches: Int,
+    previousTouches: Int, minimumTouches: Int = 2, limits: ClosedRange<Double>
+  ) -> Camera {
+    guard touches >= minimumTouches, touches == previousTouches else { return self }
+    return panned(
+      by: CGPoint(x: centroid.x - previousCentroid.x, y: centroid.y - previousCentroid.y)
+    )
+    .zoomed(by: scale, about: centroid, limits: limits)
+  }
+}
+
+/// Scroll wheel deltas to zoom factors, shared by the Mac and iPad so one wheel notch zooms the
+/// same everywhere: 12% per notch.
+public enum ScrollZoom {
+  /// One wheel notch: one line on the Mac, or 10 points of precise (smooth-scrolling) delta.
+  public static let perNotch = 1.12
+  public static let pointsPerNotch = 10.0
+
+  /// The Mac: a line wheel's lines, or a precise delta in points, proportionally, at most 1.5×
+  /// (3.5 notches) per event, as AppKit can coalesce several notches into one event.
+  public static func mac(_ delta: Double, precise: Bool) -> Double {
+    let notches = max(-3.5, min(3.5, precise ? delta / pointsPerNotch : delta))
+    return pow(perNotch, notches)
+  }
+
+  /// The iPad's discrete scrolls (a mouse wheel, or the Mac's mouse through Universal Control):
+  /// UIKit reports each notch as one event of several points, so a delta is read in points and
+  /// one event zooms at most one notch, however large its delta. Small deltas stay proportional.
+  public static func iPadWheel(_ delta: Double) -> Double {
+    pow(perNotch, max(-1, min(1, delta / pointsPerNotch)))
   }
 }
