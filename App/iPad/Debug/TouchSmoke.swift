@@ -425,8 +425,15 @@
       await frozen(store, view)
       // Without the arm, the next plain drag moves the node alone again.
       guard let after = view.scene.layout, let again = target(view, parent) else { return }
+      // Away from the child, so a plain drag can't push it.
+      let childNow = view.scene.camera.toScreen(
+        CGPoint(x: after.nodes[child].x, y: after.nodes[child].y))
+      let gap = max(hypot(again.x - childNow.x, again.y - childNow.y), 1)
       view.debugTouchDown(at: again)
-      view.debugTouchMove(to: CGPoint(x: again.x + 30, y: again.y - 20))
+      view.debugTouchMove(
+        to: CGPoint(
+          x: again.x + (again.x - childNow.x) / gap * 30,
+          y: again.y + (again.y - childNow.y) / gap * 30))
       await pause()
       if let during = view.scene.layout {
         check(point(during, child) == point(after, child), "Move Branch lasts for one drag")
@@ -662,8 +669,10 @@
       store.toggleDone(leaf)
       check(store.text.contains("\t- [x] Far leaf\n"), "detail checkbox marks the task done")
       await frozen(store, view)
-      if let kind = store.detail?.kind, case .task(_, _, let done, _) = kind {
-        check(done, "detail shows done after the toggle")
+      // The panel refreshes right after the graph update, a moment after the freeze.
+      await wait("detail shows done after the toggle (\(store.detail?.name ?? "none"))") {
+        if let kind = store.detail?.kind, case .task(_, _, let done, _) = kind { return done }
+        return false
       }
       store.activeUndoManager.undo()
       check(store.text == before, "undo the checkbox")

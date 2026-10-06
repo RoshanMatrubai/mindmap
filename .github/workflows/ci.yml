@@ -108,7 +108,7 @@ jobs:
           stage selected-branch "-layout narrow -pane map -select-node garden" "select garden"
           stage long-press-menu "-layout narrow -pane map -show-menu 'fix the fence'" "menu fix the fence"
           stage mid-rename "-layout narrow -pane map -select-node 'plant herbs' -rename-node YES" "rename plant herbs"
-          stage landscape-side-by-side "-orientation landscape -select-node garden" "select garden"
+          stage landscape-side-by-side "-orientation landscape -layout wide -select-node garden" "select garden"
           stage portrait-text "-orientation portrait -layout narrow -pane text" "layout"
           stage portrait-map "-orientation portrait -layout narrow -pane map" "layout"
           stage keyboard-bar "-orientation portrait -layout narrow -pane text -focus-editor YES" "editor focused"

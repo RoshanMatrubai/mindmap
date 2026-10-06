@@ -300,6 +300,9 @@ public final class GraphScene {
     without { applyCamera(camera) }
   }
 
+  /// A camera move (fit, zoom buttons, selection) is animating.
+  public var isCameraAnimating: Bool { world.animationKeys()?.isEmpty == false }
+
   /// The camera as it is on screen right now, including mid-animation.
   public var visibleCamera: Camera {
     guard let shown = world.presentation(), world.animationKeys()?.isEmpty == false else {
