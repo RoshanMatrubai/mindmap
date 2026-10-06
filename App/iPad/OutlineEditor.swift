@@ -9,7 +9,9 @@ struct OutlineEditor: UIViewRepresentable {
   @Bindable var store: PadMapStore
 
   func makeUIView(context: Context) -> OutlineTextView {
-    let view = OutlineTextView(usingTextLayoutManager: true)
+    // A nil text container means TextKit 2 (iOS 16+), through the designated initializer, so
+    // `configure()` runs; the `usingTextLayoutManager:` convenience initializer skips it.
+    let view = OutlineTextView(frame: .zero, textContainer: nil)
     view.onChange = { text in store.editorChanged(text) }
     view.onSelectionChange = { range in store.editorSelectionChanged(range) }
     view.onFocus = { focused in if focused { store.graphFocused = false } }
