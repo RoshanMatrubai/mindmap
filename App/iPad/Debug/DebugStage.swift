@@ -78,9 +78,18 @@
       if let orientation = defaults.string(forKey: "orientation") {
         let mask: UIInterfaceOrientationMask =
           orientation == "landscape" ? .landscapeRight : .portrait
-        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
-        scene?.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { error in
-          log.error("orientation: \(error.localizedDescription, privacy: .public)")
+        // Once the scene is active; a request during launch can be dropped.
+        Task {
+          try? await Task.sleep(for: .seconds(1))
+          let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first
+          scene?.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { error in
+            log.error("orientation: \(error.localizedDescription, privacy: .public)")
+          }
+          try? await Task.sleep(for: .seconds(1))
+          log.notice(
+            "orientation \(orientation, privacy: .public) now \(scene?.effectiveGeometry.interfaceOrientation.isLandscape == true ? "landscape" : "portrait", privacy: .public)"
+          )
         }
       }
       if let tab = defaults.string(forKey: "open-settings")?.lowercased() {

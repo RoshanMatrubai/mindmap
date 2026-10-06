@@ -128,6 +128,9 @@ final class OutlineTextView: UITextView, UITextViewDelegate, @preconcurrency NST
       selectedRange = NSRange(
         location: changedMap ? 0 : min(selection.location, (text as NSString).length), length: 0)
     }
+    // UIKit reports the selection of new text a turn later; that isn't the user moving it.
+    quietSelection = true
+    DispatchQueue.main.async { [weak self] in self?.quietSelection = false }
   }
 
   /// Runs `body` without reporting selection changes.
