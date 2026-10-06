@@ -6,7 +6,7 @@ import SwiftUI
 /// Settings window, live in both directions. Force changes reshuffle about 200 ms after the
 /// slider stops (MapStore); label size and font only push new overlaps apart.
 struct ForcesPanel: View {
-  @Bindable var store: MapStore
+  @Bindable var store: MacMapStore
 
   var body: some View {
     VStack(alignment: .leading, spacing: 7) {
@@ -88,7 +88,7 @@ struct UrgencyPicker: View {
 
 /// A popup of every family, grouped like the Settings window's previewed list.
 struct FontPicker: View {
-  @Bindable var store: MapStore
+  @Bindable var store: MacMapStore
   let label: String
 
   var body: some View {

@@ -13,6 +13,6 @@ DEBUG_INFORMATION_FORMAT = dwarf-with-dsym
 CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 
 // The Debug folders hold DEBUG-only code, the dev icon and the bundled fixtures; none of it ships.
-EXCLUDED_SOURCE_FILE_NAMES = $(SRCROOT)/App/Shared/Debug/* $(SRCROOT)/App/Mac/Debug/*
+EXCLUDED_SOURCE_FILE_NAMES = $(SRCROOT)/App/Shared/Debug/* $(SRCROOT)/App/Mac/Debug/* $(SRCROOT)/App/iPad/Debug/*
 
 #include? "Local.xcconfig"

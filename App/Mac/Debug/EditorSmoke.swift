@@ -44,7 +44,7 @@
     }
 
     @discardableResult
-    private static func frozen(_ store: MapStore) async -> Bool {
+    private static func frozen(_ store: MacMapStore) async -> Bool {
       await wait("graph settles and display link stops") {
         !store.isSwitching && store.parsedText == store.text
           && store.graphView?.scene.layout?.model == store.model
@@ -207,7 +207,7 @@
     }
 
     private static func reminderChecks(
-      _ store: MapStore, editor: OutlineTextView, view: GraphView
+      _ store: MacMapStore, editor: OutlineTextView, view: GraphView
     ) async {
       guard !DebugLaunch.realReminders, let folder = store.folder else {
         check(false, "reminders smoke requires fake store")
@@ -410,7 +410,7 @@
     }
 
     private static func shortcutChecks(
-      _ store: MapStore, editor: OutlineTextView, view: GraphView, window: NSWindow
+      _ store: MacMapStore, editor: OutlineTextView, view: GraphView, window: NSWindow
     ) async {
       store.focusEditor()
       select("Second", in: editor, whole: true)
@@ -609,7 +609,7 @@
     }
 
     private static func editMotionChecks(
-      _ store: MapStore, editor: OutlineTextView, view: GraphView, window: NSWindow
+      _ store: MacMapStore, editor: OutlineTextView, view: GraphView, window: NSWindow
     ) async {
       store.focusEditor()
       guard await frozen(store), let before = view.scene.layout else { return }
@@ -702,7 +702,7 @@
       await wait("camera animation finishes") { !view.scene.debugCameraAnimating }
     }
 
-    private static func dragChecks(_ store: MapStore, view: GraphView, window: NSWindow) async {
+    private static func dragChecks(_ store: MacMapStore, view: GraphView, window: NSWindow) async {
       guard await frozen(store), let before = view.scene.layout else { return }
       view.fitAll()
       await cameraIdle(view)
@@ -787,7 +787,7 @@
 
     /// The display link must be gone whenever nothing moves, however motion ended.
     private static func displayLinkChecks(
-      _ store: MapStore, view: GraphView, window: NSWindow
+      _ store: MacMapStore, view: GraphView, window: NSWindow
     ) async {
       guard await frozen(store), let map = store.currentURL, let layout = view.scene.layout,
         let index = layout.model.nodes.firstIndex(where: { !$0.children.isEmpty })
@@ -850,7 +850,7 @@
       _ = await frozen(store)
     }
 
-    private static func activationChecks(_ store: MapStore, editor: OutlineTextView) async {
+    private static func activationChecks(_ store: MacMapStore, editor: OutlineTextView) async {
       guard let url = store.currentURL else { return }
       let original = store.text
       let title = MapDocument.title(of: original) ?? "Smoke"
@@ -875,7 +875,7 @@
       } catch { check(false, "activation checks: \(error)") }
     }
 
-    private static func layoutChecks(_ store: MapStore) async {
+    private static func layoutChecks(_ store: MacMapStore) async {
       guard let created = store.currentURL else { return }
       store.text = "Renamed " + store.text
       guard
@@ -903,7 +903,7 @@
         })
     }
 
-    private static func timingChecks(_ store: MapStore) async {
+    private static func timingChecks(_ store: MacMapStore) async {
       guard let saved = store.currentURL, let view = store.graphView else { return }
       let folder = FileManager.default.temporaryDirectory.appending(
         path: "motion-smoke-" + UUID().uuidString)
@@ -977,7 +977,7 @@
     }
 
     /// Drags a branch through the middle of the map over about a second, like a user would.
-    private static func crowdedDrag(_ store: MapStore, view: GraphView) async {
+    private static func crowdedDrag(_ store: MacMapStore, view: GraphView) async {
       guard let window = view.window, let layout = view.scene.layout,
         let index = layout.model.nodes.firstIndex(where: { $0.children.count >= 2 })
       else { return }
@@ -1013,7 +1013,7 @@
 
     /// The graph shows the parse of the current text, settled.
     @discardableResult
-    private static func current(_ store: MapStore, _ name: String) async -> Bool {
+    private static func current(_ store: MacMapStore, _ name: String) async -> Bool {
       await wait(name) {
         store.parsedText == store.text && store.graphView?.scene.layout?.model == store.model
           && store.graphView?.isAnimating == false
@@ -1068,7 +1068,7 @@
     }
 
     private static func selectionChecks(
-      _ store: MapStore, editor: OutlineTextView, view: GraphView, window: NSWindow
+      _ store: MacMapStore, editor: OutlineTextView, view: GraphView, window: NSWindow
     ) async {
       let title = MapDocument.title(of: store.text) ?? "Smoke"
       replace(
@@ -1364,7 +1364,7 @@
     }
 
     private static func settingsChecks(
-      _ store: MapStore, editor: OutlineTextView, view: GraphView, window: NSWindow
+      _ store: MacMapStore, editor: OutlineTextView, view: GraphView, window: NSWindow
     ) async {
       defer { store.preferences = Preferences() }
       let title = MapDocument.title(of: store.text) ?? "Smoke"
@@ -1542,7 +1542,7 @@
 
     /// The two fixes from the 3b review.
     private static func reviewFixChecks(
-      _ store: MapStore, editor: OutlineTextView, view: GraphView, window: NSWindow
+      _ store: MacMapStore, editor: OutlineTextView, view: GraphView, window: NSWindow
     ) async {
       guard await frozen(store), let map = store.currentURL else { return }
       // 1. Editor undo and redo reach the store, the file and a reopened map.
@@ -1615,7 +1615,7 @@
     }
 
     /// Main-thread time to apply a selection on the 500-node fixture.
-    private static func selectionTiming(_ store: MapStore, view: GraphView) {
+    private static func selectionTiming(_ store: MacMapStore, view: GraphView) {
       guard let model = view.scene.layout?.model,
         let group = model.nodes.firstIndex(where: { $0.depth == 0 && $0.children.count > 3 }),
         let leaf = model.nodes.firstIndex(where: { $0.depth > 0 && $0.children.isEmpty })

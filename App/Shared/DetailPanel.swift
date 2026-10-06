@@ -1,21 +1,27 @@
 import MindmapCore
 import SwiftUI
 
-/// Prototype `#P`: always along the bottom of the graph pane. A hint without a selection;
-/// otherwise the name, its path and the node's fields.
+/// Prototype `#P`: always along the bottom of the graph pane, on the Mac and the iPad. A hint
+/// without a selection; otherwise the name, its path and the node's fields.
 struct DetailPanel: View {
   @Bindable var store: MapStore
+
+  #if os(macOS)
+    private let hint =
+      "click a node to highlight its branch. double-click empty space for a new group, or a label to rename it. return adds a task, tab a subtask, delete removes it."
+  #else
+    private let hint =
+      "tap a node to highlight its branch. double-tap empty space for a new group, or a label to rename it. long-press a node for more."
+  #endif
 
   var body: some View {
     Group {
       if let detail = store.detail {
         content(detail)
       } else {
-        Text(
-          "click a node to highlight its branch. double-click empty space for a new group, or a label to rename it. return adds a task, tab a subtask, delete removes it."
-        )
-        .font(.system(size: 12))
-        .foregroundStyle(color(0x636366))
+        Text(hint)
+          .font(.system(size: 12))
+          .foregroundStyle(color(0x636366))
       }
     }
     .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -57,15 +63,7 @@ struct DetailPanel: View {
           }
           field("status") {
             HStack(spacing: 4) {
-              if leaf {
-                Toggle(
-                  "done",
-                  isOn: Binding(get: { done }, set: { _ in store.toggleDone(detail.index) })
-                )
-                .toggleStyle(.checkbox)
-                .labelsHidden()
-                .controlSize(.small)
-              }
+              if leaf { checkbox(done) { store.toggleDone(detail.index) } }
               value(done ? "done" : "open")
             }
           }
@@ -75,9 +73,7 @@ struct DetailPanel: View {
           field("linked to") {
             HStack(spacing: 0) {
               ForEach(Array(detail.linked.enumerated()), id: \.offset) { i, node in
-                Button(node.name.lowercased()) { store.selectLinked(node.index) }
-                  .buttonStyle(.plain)
-                  .onHover { $0 ? NSCursor.pointingHand.push() : NSCursor.pop() }
+                linkButton(node.name.lowercased()) { store.selectLinked(node.index) }
                 if i < detail.linked.count - 1 { value(", ") }
               }
             }
@@ -91,6 +87,43 @@ struct DetailPanel: View {
         Text(line).font(.system(size: 11)).foregroundStyle(color(0x7f9cd1)).padding(.top, 6)
       }
     }
+  }
+
+  /// The done checkbox: AppKit's on the Mac; a tappable square on the iPad (iOS has no checkbox).
+  @ViewBuilder
+  private func checkbox(_ done: Bool, toggle: @escaping () -> Void) -> some View {
+    #if os(macOS)
+      Toggle("done", isOn: Binding(get: { done }, set: { _ in toggle() }))
+        .toggleStyle(.checkbox)
+        .labelsHidden()
+        .controlSize(.small)
+    #else
+      Button(action: toggle) {
+        Image(systemName: done ? "checkmark.square.fill" : "square")
+          .font(.system(size: 17))
+          .foregroundStyle(color(done ? 0x6a4ff0 : 0xa1a1a6))
+          .frame(minWidth: 30, minHeight: 30)
+          .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .hoverEffect()
+      .accessibilityLabel(done ? "mark not done" : "mark done")
+    #endif
+  }
+
+  @ViewBuilder
+  private func linkButton(_ title: String, action: @escaping () -> Void) -> some View {
+    #if os(macOS)
+      Button(title, action: action)
+        .buttonStyle(.plain)
+        .onHover { $0 ? NSCursor.pointingHand.push() : NSCursor.pop() }
+    #else
+      Button(title, action: action)
+        .buttonStyle(.plain)
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
+        .hoverEffect()
+    #endif
   }
 
   private func field(_ label: String, @ViewBuilder content: () -> some View) -> some View {

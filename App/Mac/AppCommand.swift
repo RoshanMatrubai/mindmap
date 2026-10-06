@@ -89,7 +89,7 @@ enum AppCommand: CaseIterable {
     }
   }
 
-  func isDisabled(_ store: MapStore) -> Bool {
+  func isDisabled(_ store: MacMapStore) -> Bool {
     switch self {
     case .newMap: store.folder == nil || store.isSwitching
     case .nextMap, .previousMap: store.maps.count < 2 || store.isSwitching
@@ -105,7 +105,7 @@ enum AppCommand: CaseIterable {
     }
   }
 
-  func perform(_ store: MapStore) {
+  func perform(_ store: MacMapStore) {
     switch self {
     case .newMap: store.newMap()
     case .nextMap: store.switchMap(by: 1)
@@ -143,7 +143,7 @@ enum AppCommand: CaseIterable {
     }
   }
 
-  func button(_ store: MapStore) -> some View {
+  func button(_ store: MacMapStore) -> some View {
     Button(title) { perform(store) }
       .keyboardShortcut(shortcut)
       .disabled(isDisabled(store))

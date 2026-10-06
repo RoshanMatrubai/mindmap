@@ -3,7 +3,7 @@ import MindmapCore
 import SwiftUI
 
 struct OutlineEditor: NSViewRepresentable {
-  @Bindable var store: MapStore
+  @Bindable var store: MacMapStore
 
   func makeNSView(context: Context) -> NSScrollView {
     let scroll = NSScrollView()
