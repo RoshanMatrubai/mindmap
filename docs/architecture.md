@@ -5,12 +5,14 @@
 ```
 App/                        App code in three file-system synchronized folders: new files join their
                             targets without editing project.pbxproj
-  Shared/                   Both apps: platform-neutral app code (Log, MapRepository), fonts, app icon
+  Shared/                   Both apps: platform-neutral app code (MapStore, MapRepository, DetailPanel, Log),
+                            fonts, app icon
     Debug/                  DEBUG only: .dev guard, -fixture loading, fixtures, dev icon
-  Mac/                      Mac target "mindmap" only: everything AppKit, MapStore, editor, settings,
+  Mac/                      Mac target "mindmap" only: everything AppKit, MacMapStore, editor, settings,
                             Reminders sync (EventKit)
     Debug/                  DEBUG only: Mac launch arguments, smoke harness, benchmark
-  iPad/                     iPad target "mindmap-ipad" only: everything UIKit
+  iPad/                     iPad target "mindmap-ipad" only: the iPad app shell and graph pane
+    Debug/                  DEBUG only: touch smoke harness, screenshot launch hooks
 Config/                     Build settings (.xcconfig), entitlements. Local.xcconfig is yours, gitignored
 mindmap.xcodeproj/          Checked-in project. Holds structure only; settings live in Config/
 Packages/MindmapKit/        Local Swift package with all logic (macOS 14, iOS 17)
@@ -38,7 +40,7 @@ Both targets link `MindmapCore` and `MindmapGraph` and use the same bundle IDs, 
 |---|---|---|---|
 | Layers, labels, colors, fonts | `GraphScene`, `NodeLayer`, `LabelRasterCache`, `GraphStyle`, `GraphFonts` (Core Animation, Core Text, Core Graphics) | | |
 | Simulation, display link lifetime, camera | `GraphController`, `SimulationWorker` | | |
-| Host view | | `GraphView` (`NSView`): mouse, trackpad, keys, naming field, menus, occlusion | `GraphView` (`UIView`, `GraphView+iOS.swift`): display only in i1 |
+| Host view | | `GraphView` (`NSView`): mouse, trackpad, keys, naming field, menus, occlusion | `GraphView` (`UIView`, `GraphView+iOS.swift`): touch, pointer and trackpad gestures, naming field, context menu, background pause |
 | Display link | Created by the host, driven by `GraphController` | `NSView.displayLink(target:selector:)` (macOS 14) | `CADisplayLink`, `preferredFrameRateRange` up to 120 Hz (ProMotion) |
 
 Rules for shared code:
@@ -46,7 +48,7 @@ Rules for shared code:
 - `App/Shared` and the shared files in `MindmapGraph` never import AppKit or UIKit, and never use `NSFont`, `NSImage`, `NSColor`, `UIFont`, `UIImage` or `UIColor`. Use Core Text, Core Graphics and `CGColor`. Platform host views live in `GraphView.swift` (`#if os(macOS)`) and `GraphView+iOS.swift` (`#if os(iOS)`).
 - An `#if os(...)` in shared code is a last resort for a real platform difference (the scene's y-flip: AppKit layers are y-up, UIKit's y-down). Prefer a host hook such as `GraphController.makeDisplayLink`.
 - Reminders sync is Mac-only: EventKit and `ReminderSyncController` are in `App/Mac`, so the iPad target doesn't compile them. `MindmapCore` keeps the pure sync logic and sidecars, which also move along with a renamed map on iPad.
-- What couldn't be shared yet: `MapStore` holds `NSTextView`, `NSOpenPanel`, `GraphView` and Reminders sync, so it stays in `App/Mac` until roadmap step i3 splits its platform-neutral half into `App/Shared`.
+- The store is shared (step i2). `MapStore` (`App/Shared`) owns the maps folder (security-scoped bookmark), listing, loading, autosave and title renames, parsing off the main thread, graph edits as text changes and the layout sidecars, and exposes small hooks for platform glue. `MacMapStore` (`App/Mac`) subclasses it with the AppKit editor (graph edits go through `NSTextView`, one step in its undo stack), `NSOpenPanel` and Reminders sync; the Mac behaves as before. On the iPad, with no editor until step i3, graph edits replace the store's text directly, one step each on the store's `UndoManager` (which the graph view also offers as its responder's undo manager). The iPad keeps maps in its own container (`Application Support/maps`) with no picker, in Debug and, until step i4, in Release.
 
 ## Data
 
