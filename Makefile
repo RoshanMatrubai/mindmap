@@ -71,10 +71,10 @@ ipad-stop:
 ipad-screenshot:
 	@mkdir -p build && xcrun simctl io booted screenshot build/ipad-screenshot.png >/dev/null 2>&1 && echo "build/ipad-screenshot.png"
 
-# LAST=15m reaches further back (a whole smoke run).
+# LAST=15m reaches further back (a whole smoke run); SINCE="2026-10-06 05:00:00" starts there.
 LAST ?= 2m
 ipad-logs:
-	xcrun simctl spawn booted log show --last $(LAST) --style compact --predicate 'subsystem == "$(DEV_ID)"'
+	xcrun simctl spawn booted log show $(if $(SINCE),--start "$(SINCE)",--last $(LAST)) --style compact --predicate 'subsystem == "$(DEV_ID)"'
 
 install:
 	$(MAKE) build CONFIG=Release SIGNING=configured

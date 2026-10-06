@@ -36,6 +36,18 @@
     /// The store's undo manager (no editor before roadmap step i3), so the system undo
     /// commands and gestures reach graph edits.
     public var externalUndoManager: UndoManager?
+    /// A narrow window shows the text or the graph: the menu then offers "Edit Text", which
+    /// calls this with the node.
+    public var onEditText: ((Int) -> Void)?
+    public var offersEditText = false
+    /// False while the host hides the pane (a narrow window showing the text): nothing moves or
+    /// draws, as in the background.
+    public var isOnScreen = true {
+      didSet {
+        guard isOnScreen != oldValue else { return }
+        if isOnScreen { controller.resumeMotion() } else { controller.pauseMotion() }
+      }
+    }
     public var selection: Int? { scene.selection }
     public var isNaming: Bool { naming != nil }
     public var onFreeze: ((UUID, GraphLayout, [String: LayoutPoint]) -> Void)? {
@@ -95,7 +107,7 @@
       layer.addSublayer(scene.root)
       scene.setSize(frame.size)
       controller.makeDisplayLink = { [weak self] in
-        guard let self, let window = self.window,
+        guard let self, self.isOnScreen, let window = self.window,
           window.windowScene?.activationState != .background
         else { return nil }
         let link = CADisplayLink(
@@ -426,6 +438,12 @@
 
     public func clearSelection() { userSelect(nil) }
 
+    /// Hardware arrows with the graph focused: ↑ parent, ↓ first child, ← → siblings.
+    public func navigate(_ move: SelectionMove) {
+      guard let selection, let model = scene.layout?.model else { return }
+      if let next = Selection.neighbor(model, of: selection, move) { userSelect(next) }
+    }
+
     public func addTask() { selection.map { beginAdd(.sibling($0)) } }
     public func addSubtask() { selection.map { beginAdd(.child($0)) } }
     public func deleteSelection() { selection.map { _ = onEdit?(.delete($0)) } }
@@ -460,6 +478,13 @@
           self.beginRename(i)
         },
       ]
+      if offersEditText {
+        items.append(
+          GraphMenuItem(title: "Edit Text", symbol: "text.cursor") { [weak self] in
+            guard let self, let i = self.selection else { return }
+            self.onEditText?(i)
+          })
+      }
       if node.depth > 0 {
         items.append(
           GraphMenuItem(

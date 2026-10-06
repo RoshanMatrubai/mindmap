@@ -18,7 +18,7 @@ A native iPadOS app (UIKit + SwiftUI, not Mac Catalyst), iPadOS 17+, iPad only, 
 
 **i1. Port preparation (done):** app code split into `App/Shared`, `App/Mac` and `App/iPad`; `MindmapGraph` made platform-neutral (shared `GraphController` and layer code, thin `NSView` and `UIView` hosts, `CADisplayLink` up to 120 Hz on iPad); iPad target, `make ipad-*` commands and a CI simulator build. The iPad app shows the map title and the settled graph of the `-fixture` map, without interaction.
 **i2. Touch graph (done):** the store split into `App/Shared` (`MapStore`) and `App/Mac` (`MacMapStore`); tap to select, drag nodes (⇧ or "Move Branch" for subtrees), pan, pinch, long-press menus, inline naming, pointer hover, the detail panel; motion pauses when the scene goes to the background. A DEBUG touch smoke harness runs in CI on a simulator. Gestures in [design.md](design.md#ipad-touch-step-i2).
-**i3. Editor and layout:** the outline editor (TextKit 2 `UITextView`) on the shared `MapStore`, split view, settings.
+**i3. Editor and layout (done):** the outline editor (TextKit 2 `UITextView`) on the shared `MapStore` with the Mac's rules and colors, a keyboard bar, the Mac's shortcuts from the shared `AppCommand` table, side by side in wide windows and a Text / Map switch in narrow ones, map switching and a folder picker for Release. Details in [design.md](design.md#ipad-editor-and-layout-step-i3).
 **i4. iCloud Drive sync:** maps in the app's iCloud Drive folder on both devices; handle file coordination, conflicts and the layout sidecars.
 **i5. Polish and device install:** keyboard and pointer shortcuts, multitasking sizes, energy check on a ProMotion iPad, signed install on a device with the Personal Team.
 

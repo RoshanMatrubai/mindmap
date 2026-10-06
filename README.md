@@ -80,6 +80,8 @@ when the map has focus and a node is selected:
 | ← / → | select the previous / next task at the same level |
 | shift-drag | move it together with its subtasks |
 
+on ipad with a keyboard the same shortcuts work, and they show in the menu bar and when you hold ⌘.
+
 ## how to set it up
 
 you need macos 14 or newer and xcode 26 or newer (free on the app store).

@@ -740,17 +740,6 @@ class MapStore {
     } catch { report("restore maps folder", error) }
   }
 
-  /// Without a picker (the iPad until roadmap step i4): maps live in the app's own container.
-  func useAppFolder() {
-    guard folder == nil, !isSwitching else { return }
-    let url = URL.applicationSupportDirectory.appending(path: "maps")
-    do {
-      try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-    } catch { return report("maps folder", error) }
-    isSwitching = true
-    Task { await use(url) }
-  }
-
   private func use(_ url: URL) async {
     defer { isSwitching = false }
     await drainSync()
