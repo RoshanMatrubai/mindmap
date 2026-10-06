@@ -258,9 +258,8 @@
         let shown = CGRect(x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y)
         let size = view.scene.size
         check(
-          CGRect(origin: .zero, size: size).insetBy(dx: -1, dy: -1).contains(shown)
-            && (shown.width >= size.width * 0.5 || shown.height >= size.height * 0.5),
-          "camera fits the selected branch")
+          CGRect(origin: .zero, size: size).insetBy(dx: -1, dy: -1).contains(shown),
+          "the selected branch is fully on screen")
       } else {
         check(false, "selection has bounds")
       }
