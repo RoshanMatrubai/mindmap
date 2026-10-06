@@ -28,8 +28,9 @@ private func simulation(_ text: String) -> LayoutSimulation {
 
   let second = simulation("second\nh\n- c")
   view.show(second, title: "second", refit: true, document: b)
-  #expect(!view.apply(stale, seconds: 10, drag: nil, generation: 0))
-  #expect(!view.apply(stale, seconds: 10, drag: nil, generation: view.generation))
+  #expect(!view.controller.apply(stale, seconds: 10, drag: nil, generation: 0))
+  #expect(
+    !view.controller.apply(stale, seconds: 10, drag: nil, generation: view.controller.generation))
   #expect(view.scene.layout?.model == second.layout.model)
   #expect(view.displayedSimulation?.layout.model == second.layout.model)
   #expect(freezes.isEmpty)

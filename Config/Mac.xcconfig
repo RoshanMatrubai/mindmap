@@ -1,0 +1,14 @@
+// Mac target settings, layered on Debug.xcconfig / Release.xcconfig by Mac-Debug.xcconfig and
+// Mac-Release.xcconfig. AppKit + SwiftUI app, macOS 14+.
+
+SDKROOT = macosx
+MACOSX_DEPLOYMENT_TARGET = 14.0
+
+INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = Sync high priority tasks to the mindmap list in Reminders.
+// Only to delete the calendar an earlier version created; Calendar access is never requested.
+INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = Remove the mindmap calendar an earlier version created.
+INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.productivity
+
+// App Sandbox on. Maps live in a folder the user picks (security-scoped bookmark); settings and caches
+// in ~/Library/Containers/$(PRODUCT_BUNDLE_IDENTIFIER). See docs/decisions/0002-data-protection.md.
+CODE_SIGN_ENTITLEMENTS = Config/mindmap.entitlements

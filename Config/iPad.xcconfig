@@ -1,0 +1,23 @@
+// iPad target settings, layered on Debug.xcconfig / Release.xcconfig by iPad-Debug.xcconfig and
+// iPad-Release.xcconfig. Native UIKit + SwiftUI app (not Mac Catalyst), iPad only, iPadOS 17+.
+// Same bundle IDs, display names and .dev guard as the Mac app. Included after Local.xcconfig, so
+// Local's team stays and the signing style here wins.
+
+SDKROOT = iphoneos
+SUPPORTED_PLATFORMS = iphoneos iphonesimulator
+IPHONEOS_DEPLOYMENT_TARGET = 17.0
+TARGETED_DEVICE_FAMILY = 2
+SUPPORTS_MACCATALYST = NO
+SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO
+SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO
+
+INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES
+INFOPLIST_KEY_UILaunchScreen_Generation = YES
+INFOPLIST_KEY_UIUserInterfaceStyle = Dark
+INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+
+// Automatic signing with the team from Local.xcconfig, for device installs (roadmap i5).
+// Simulator builds need no signing.
+CODE_SIGN_STYLE = Automatic
+CODE_SIGN_IDENTITY = Apple Development
+CODE_SIGN_IDENTITY[sdk=iphonesimulator*] = -

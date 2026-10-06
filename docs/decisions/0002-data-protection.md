@@ -53,4 +53,4 @@ Signing is therefore not needed for protection or for keeping the maps folder. I
 
 ## Debug loop
 
-`make run ARGS="-fixture sample"` → `make screenshot` (only the dev window, by exact owner name; needs Screen Recording for the terminal) → `make logs` (`os.Logger`, subsystem = bundle ID) → `make stop`. DEBUG-only code lives in `App/Debug/`, excluded from Release with `EXCLUDED_SOURCE_FILE_NAMES`; `App/Debug/sample.mindmap` is a copy of the test fixture, kept in sync by a test.
+`make run ARGS="-fixture sample"` → `make screenshot` (only the dev window, by exact owner name; needs Screen Recording for the terminal) → `make logs` (`os.Logger`, subsystem = bundle ID) → `make stop`. DEBUG-only code lives in `App/Shared/Debug/` and `App/Mac/Debug/`, excluded from Release with `EXCLUDED_SOURCE_FILE_NAMES`; `App/Shared/Debug/sample.mindmap` is a copy of the test fixture, kept in sync by a test.

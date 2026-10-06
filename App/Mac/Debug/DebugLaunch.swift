@@ -2,8 +2,9 @@
   import AppKit
   import MindmapGraph
 
-  /// DEBUG-only launch arguments for the agent debug loop (AGENTS.md). Excluded from Release builds.
-  enum DebugLaunch {
+  /// The Mac app's DEBUG-only launch arguments for the agent debug loop (AGENTS.md). Excluded
+  /// from Release builds. The fixture and bundle ID guard are in App/Shared/Debug/DebugBuild.swift.
+  extension DebugLaunch {
     /// Fixtures and native smoke checks start with fresh window state, including after a crash.
     static var realReminders: Bool {
       let args = CommandLine.arguments
@@ -21,19 +22,6 @@
       {
         UserDefaults.standard.register(defaults: ["ApplePersistenceIgnoreState": true])
       }
-    }
-
-    /// `-fixture <name>` (read via UserDefaults' argument domain) fills the editor from a fixture
-    /// bundled into Debug builds. App/Debug/sample.mindmap mirrors Packages/MindmapKit/Tests/Fixtures.
-    static var fixtureText: String? {
-      guard let name = UserDefaults.standard.string(forKey: "fixture") else { return nil }
-      guard let url = Bundle.main.url(forResource: name, withExtension: "mindmap"),
-        let text = try? String(contentsOf: url, encoding: .utf8)
-      else {
-        log.error("fixture \(name, privacy: .public) not found")
-        return nil
-      }
-      return text
     }
 
     /// `-window-size 1400x900` sets the window's content size, for screenshots.

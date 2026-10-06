@@ -1,23 +1,14 @@
-// Shared build settings for the mindmap app target. Debug.xcconfig and Release.xcconfig include this.
-// Keep build settings here, not in project.pbxproj.
+// Build settings shared by both app targets. Layers: Base → Debug/Release (per configuration) →
+// Mac-Debug/Mac-Release add Mac.xcconfig, iPad-Debug/iPad-Release add iPad.xcconfig.
+// Keep build settings in these files, not in project.pbxproj.
 
-SDKROOT = macosx
-MACOSX_DEPLOYMENT_TARGET = 14.0
 SWIFT_VERSION = 6.0
 PRODUCT_MODULE_NAME = mindmap
 MARKETING_VERSION = 0.1.0
 CURRENT_PROJECT_VERSION = 1
 
 GENERATE_INFOPLIST_FILE = YES
-INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = Sync high priority tasks to the mindmap list in Reminders.
-// Only to delete the calendar an earlier version created; Calendar access is never requested.
-INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = Remove the mindmap calendar an earlier version created.
-INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.productivity
 INFOPLIST_KEY_NSHumanReadableCopyright = Copyright © 2026 Roshan Matrubai. MIT License.
-
-// App Sandbox on. Maps live in a folder the user picks (security-scoped bookmark); settings and caches
-// in ~/Library/Containers/$(PRODUCT_BUNDLE_IDENTIFIER). See docs/decisions/0002-data-protection.md.
-CODE_SIGN_ENTITLEMENTS = Config/mindmap.entitlements
 
 // Ad-hoc signing by default. Set a team in Config/Local.xcconfig (see Local.xcconfig.example).
 CODE_SIGN_STYLE = Manual

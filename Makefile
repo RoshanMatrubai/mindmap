@@ -12,13 +12,21 @@ SWIFTPM := --package-path $(PKG) --scratch-path build/swiftpm --cache-path $(CAC
 # Keep nested sandboxes disabled so builds also work inside an agent sandbox
 # (Codex workspace-write mode or the Claude Code sandbox).
 # The manifest-sandbox flags mirror --disable-sandbox for package manifests.
-XCODEBUILD := xcodebuild -project mindmap.xcodeproj -scheme mindmap -destination 'platform=macOS' -derivedDataPath build/DerivedData -IDEPackageSupportDisableManifestSandbox=YES -packageCachePath $(CACHE_ROOT)/xcode-packages -IDEPackageCacheDirPath=$(CACHE_ROOT)/xcode-packages -IDEDisablePackageManifestCaching=YES CLANG_MODULE_CACHE_PATH=$(CLANG_MODULE_CACHE_PATH) $(SIGNING_FLAGS)
+XCODEBUILD_FLAGS := -project mindmap.xcodeproj -derivedDataPath build/DerivedData -IDEPackageSupportDisableManifestSandbox=YES -packageCachePath $(CACHE_ROOT)/xcode-packages -IDEPackageCacheDirPath=$(CACHE_ROOT)/xcode-packages -IDEDisablePackageManifestCaching=YES CLANG_MODULE_CACHE_PATH=$(CLANG_MODULE_CACHE_PATH)
+XCODEBUILD := xcodebuild -scheme mindmap -destination 'platform=macOS' $(XCODEBUILD_FLAGS) $(SIGNING_FLAGS)
+# iPad simulator builds need no signing. A generic destination works without any particular simulator (CI).
+IPAD_XCODEBUILD := xcodebuild -scheme mindmap-ipad -destination 'generic/platform=iOS Simulator' $(XCODEBUILD_FLAGS)
 PRODUCTS := build/DerivedData/Build/Products
 SOURCES := App $(PKG) scripts
 DEV_NAME := mindmap dev
 DEV_APP := $(PRODUCTS)/Debug/$(DEV_NAME).app
+DEV_ID := io.github.roshanmatrubai.mindmap.dev
+IPAD_DEV_APP := $(PRODUCTS)/Debug-iphonesimulator/$(DEV_NAME).app
+# The simulator ipad-run uses: the custom "iPad Pro 12.9 M1" if it exists, else a stock one.
+SIM ?= $(shell xcrun simctl list devices available | grep -qF "    iPad Pro 12.9 M1 " && echo "iPad Pro 12.9 M1" || echo "iPad Pro 13-inch (M5)")
 
-.PHONY: build run stop screenshot logs install check-isolation test preview lint format clean icon
+.PHONY: build run stop screenshot logs install check-isolation test preview lint format clean icon \
+	ipad-build ipad-run ipad-stop ipad-screenshot ipad-logs
 
 build:
 	$(XCODEBUILD) -configuration $(CONFIG) build
@@ -40,7 +48,31 @@ screenshot:
 	  echo "screenshot is blank: grant Screen Recording to your terminal app in System Settings > Privacy & Security > Screen & System Audio Recording, then restart the terminal"; exit 1; fi
 
 logs:
-	log show --last 2m --style compact --predicate 'subsystem == "io.github.roshanmatrubai.mindmap.dev"'
+	log show --last 2m --style compact --predicate 'subsystem == "$(DEV_ID)"'
+
+# iPad: the same Debug app ("mindmap dev", .dev bundle ID) in the iPad simulator, whose storage is
+# its own sandbox. ARGS go to the app, e.g. make ipad-run ARGS="-fixture sample" SIM="iPad Air 13-inch (M4)".
+ipad-build:
+	$(IPAD_XCODEBUILD) -configuration $(CONFIG) build
+
+ipad-run:
+	$(MAKE) ipad-build CONFIG=Debug
+	@udid=$$(xcrun simctl list devices available | grep -F "    $(SIM) (" | head -1 | grep -oE '[0-9A-F]{8}(-[0-9A-F]{4}){3}-[0-9A-F]{12}'); \
+	if [ -z "$$udid" ]; then echo "no simulator named $(SIM); pass SIM=\"<name>\" (xcrun simctl list devices)"; exit 1; fi; \
+	xcrun simctl boot $$udid 2>/dev/null; xcrun simctl bootstatus $$udid -b >/dev/null && \
+	{ open -b com.apple.iphonesimulator 2>/dev/null || true; } && \
+	xcrun simctl terminate $$udid $(DEV_ID) 2>/dev/null; \
+	xcrun simctl install $$udid "$(IPAD_DEV_APP)" && \
+	xcrun simctl launch $$udid $(DEV_ID) $(ARGS)
+
+ipad-stop:
+	@xcrun simctl terminate booted $(DEV_ID) 2>/dev/null || true
+
+ipad-screenshot:
+	@mkdir -p build && xcrun simctl io booted screenshot build/ipad-screenshot.png >/dev/null 2>&1 && echo "build/ipad-screenshot.png"
+
+ipad-logs:
+	xcrun simctl spawn booted log show --last 2m --style compact --predicate 'subsystem == "$(DEV_ID)"'
 
 install:
 	$(MAKE) build CONFIG=Release SIGNING=configured

@@ -1,4 +1,3 @@
-import AppKit
 import CoreGraphics
 import CoreText
 import Foundation
@@ -49,10 +48,12 @@ public enum GraphStyle {
     let systemFont = CTFontCreateUIFontForLanguage(.system, size, nil)!
     if family == GraphFonts.system { return systemFont }
     if family == GraphFonts.systemRounded {
-      guard let rounded = NSFont.systemFont(ofSize: size).fontDescriptor.withDesign(.rounded),
-        let font = NSFont(descriptor: rounded, size: size)
-      else { return systemFont }
-      return font as CTFont
+      // The trait AppKit's and UIKit's `.rounded` system design set, in plain Core Text.
+      let rounded = CTFontDescriptorCreateCopyWithAttributes(
+        CTFontCopyFontDescriptor(systemFont),
+        [kCTFontTraitsAttribute: ["NSCTFontUIFontDesignTrait": "NSCTFontUIFontDesignRounded"]]
+          as CFDictionary)
+      return CTFontCreateWithFontDescriptor(rounded, size, nil)
     }
     let wght = 0x7767_6874  // 'wght'
     let descriptor = CTFontDescriptorCreateWithAttributes(

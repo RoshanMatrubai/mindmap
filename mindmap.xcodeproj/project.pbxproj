@@ -9,6 +9,8 @@
 /* Begin PBXBuildFile section */
 		AA0000000000000000000018 /* MindmapCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000010 /* MindmapCore */; };
 		AA0000000000000000000019 /* MindmapGraph in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000011 /* MindmapGraph */; };
+		AA000000000000000000002A /* MindmapCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000027 /* MindmapCore */; };
+		AA000000000000000000002B /* MindmapGraph in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000028 /* MindmapGraph */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -17,10 +19,19 @@
 		AA0000000000000000000008 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
 		AA0000000000000000000009 /* mindmap.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = mindmap.entitlements; sourceTree = "<group>"; };
 		AA000000000000000000000A /* mindmap.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = mindmap.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0000000000000000000029 /* mindmap.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = mindmap.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA000000000000000000002E /* iPad-Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "iPad-Debug.xcconfig"; sourceTree = "<group>"; };
+		AA000000000000000000002F /* iPad-Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "iPad-Release.xcconfig"; sourceTree = "<group>"; };
+		AA0000000000000000000030 /* iPad.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = iPad.xcconfig; sourceTree = "<group>"; };
+		AA0000000000000000000031 /* Mac.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Mac.xcconfig; sourceTree = "<group>"; };
+		AA0000000000000000000032 /* Mac-Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Mac-Debug.xcconfig"; sourceTree = "<group>"; };
+		AA0000000000000000000033 /* Mac-Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Mac-Release.xcconfig"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		AA0000000000000000000003 /* App */ = {isa = PBXFileSystemSynchronizedRootGroup; path = App; sourceTree = "<group>"; };
+		AA0000000000000000000003 /* Mac */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Mac; sourceTree = "<group>"; };
+		AA0000000000000000000020 /* Shared */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Shared; sourceTree = "<group>"; };
+		AA0000000000000000000021 /* iPad */ = {isa = PBXFileSystemSynchronizedRootGroup; path = iPad; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -33,16 +44,35 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA0000000000000000000025 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA000000000000000000002A /* MindmapCore in Frameworks */,
+				AA000000000000000000002B /* MindmapGraph in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		AA0000000000000000000002 = {
 			isa = PBXGroup;
 			children = (
-				AA0000000000000000000003 /* App */,
+				AA000000000000000000001A /* App */,
 				AA0000000000000000000004 /* Config */,
 				AA0000000000000000000005 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		AA000000000000000000001A /* App */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000020 /* Shared */,
+				AA0000000000000000000003 /* Mac */,
+				AA0000000000000000000021 /* iPad */,
+			);
+			path = App;
 			sourceTree = "<group>";
 		};
 		AA0000000000000000000004 /* Config */ = {
@@ -51,6 +81,12 @@
 				AA0000000000000000000006 /* Base.xcconfig */,
 				AA0000000000000000000007 /* Debug.xcconfig */,
 				AA0000000000000000000008 /* Release.xcconfig */,
+				AA0000000000000000000031 /* Mac.xcconfig */,
+				AA0000000000000000000032 /* Mac-Debug.xcconfig */,
+				AA0000000000000000000033 /* Mac-Release.xcconfig */,
+				AA0000000000000000000030 /* iPad.xcconfig */,
+				AA000000000000000000002E /* iPad-Debug.xcconfig */,
+				AA000000000000000000002F /* iPad-Release.xcconfig */,
 				AA0000000000000000000009 /* mindmap.entitlements */,
 			);
 			path = Config;
@@ -60,6 +96,7 @@
 			isa = PBXGroup;
 			children = (
 				AA000000000000000000000A /* mindmap.app */,
+				AA0000000000000000000029 /* mindmap.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -80,7 +117,8 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				AA0000000000000000000003 /* App */,
+				AA0000000000000000000020 /* Shared */,
+				AA0000000000000000000003 /* Mac */,
 			);
 			name = mindmap;
 			packageProductDependencies = (
@@ -89,6 +127,31 @@
 			);
 			productName = mindmap;
 			productReference = AA000000000000000000000A /* mindmap.app */;
+			productType = "com.apple.product-type.application";
+		};
+		AA0000000000000000000022 /* mindmap-ipad */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA0000000000000000000023 /* Build configuration list for PBXNativeTarget "mindmap-ipad" */;
+			buildPhases = (
+				AA0000000000000000000024 /* Sources */,
+				AA0000000000000000000025 /* Frameworks */,
+				AA0000000000000000000026 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AA0000000000000000000020 /* Shared */,
+				AA0000000000000000000021 /* iPad */,
+			);
+			name = "mindmap-ipad";
+			packageProductDependencies = (
+				AA0000000000000000000027 /* MindmapCore */,
+				AA0000000000000000000028 /* MindmapGraph */,
+			);
+			productName = "mindmap-ipad";
+			productReference = AA0000000000000000000029 /* mindmap.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -102,6 +165,9 @@
 				LastUpgradeCheck = 2600;
 				TargetAttributes = {
 					AA000000000000000000000B = {
+						CreatedOnToolsVersion = 26.0;
+					};
+					AA0000000000000000000022 = {
 						CreatedOnToolsVersion = 26.0;
 					};
 				};
@@ -124,12 +190,20 @@
 			projectRoot = "";
 			targets = (
 				AA000000000000000000000B /* mindmap */,
+				AA0000000000000000000022 /* mindmap-ipad */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		AA000000000000000000000F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA0000000000000000000026 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -146,19 +220,26 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA0000000000000000000024 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
 		AA0000000000000000000012 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = AA0000000000000000000007 /* Debug.xcconfig */;
+			baseConfigurationReference = AA0000000000000000000032 /* Mac-Debug.xcconfig */;
 			buildSettings = {
 			};
 			name = Debug;
 		};
 		AA0000000000000000000013 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = AA0000000000000000000008 /* Release.xcconfig */;
+			baseConfigurationReference = AA0000000000000000000033 /* Mac-Release.xcconfig */;
 			buildSettings = {
 			};
 			name = Release;
@@ -175,6 +256,20 @@
 			};
 			name = Release;
 		};
+		AA000000000000000000002C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = AA000000000000000000002E /* iPad-Debug.xcconfig */;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		AA000000000000000000002D /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = AA000000000000000000002F /* iPad-Release.xcconfig */;
+			buildSettings = {
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -183,6 +278,15 @@
 			buildConfigurations = (
 				AA0000000000000000000012 /* Debug */,
 				AA0000000000000000000013 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA0000000000000000000023 /* Build configuration list for PBXNativeTarget "mindmap-ipad" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA000000000000000000002C /* Debug */,
+				AA000000000000000000002D /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -211,6 +315,14 @@
 			productName = MindmapCore;
 		};
 		AA0000000000000000000011 /* MindmapGraph */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MindmapGraph;
+		};
+		AA0000000000000000000027 /* MindmapCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MindmapCore;
+		};
+		AA0000000000000000000028 /* MindmapGraph */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = MindmapGraph;
 		};

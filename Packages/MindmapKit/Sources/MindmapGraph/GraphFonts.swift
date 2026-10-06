@@ -3,7 +3,7 @@ import Foundation
 import os
 
 /// The label font picker's families (docs/design.md "Fonts"). Bundled families ship as one
-/// upright file each in App/Fonts/<Family>/, named `<Family>.ttf` (variable) or
+/// upright file each in App/Shared/Fonts/<Family>/, named `<Family>.ttf` (variable) or
 /// `<Family>-Regular.ttf`, without spaces. SF Pro and SF Pro Rounded are system fonts.
 public enum GraphFonts {
   public struct Group: Sendable, Identifiable {
@@ -49,7 +49,7 @@ public enum GraphFonts {
 
   private static let registered = OSAllocatedUnfairLock(initialState: Set<String>())
 
-  /// The font files of `family` under `root`: the app's Resources (flat) or App/Fonts (nested).
+  /// The font files of `family` under `root`: the app's Resources (flat) or App/Shared/Fonts (nested).
   public static func files(of family: String, in root: URL) -> [URL] {
     let slug = family.replacingOccurrences(of: " ", with: "")
     let names: Set = [slug + ".ttf", slug + "-Regular.ttf"]

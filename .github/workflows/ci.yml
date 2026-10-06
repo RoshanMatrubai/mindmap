@@ -11,6 +11,7 @@ concurrency:
 
 jobs:
   build:
+    name: Mac (lint, package tests, Debug and Release builds)
     # Newest generally available macOS runner; its default Xcode is 26.x (the project minimum).
     runs-on: macos-26
     timeout-minutes: 30
@@ -24,6 +25,28 @@ jobs:
         run: make test
       - name: Release build
         run: make build CONFIG=Release
+      - name: Tree is clean (data rule)
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "The build changed or created tracked/untracked files:"
+            git status --porcelain
+            exit 1
+          fi
+
+  ipad:
+    # Builds only: the package tests run once, in the Mac job. The runner has no custom simulators,
+    # so this builds for a generic iOS Simulator destination (make ipad-build), unsigned.
+    name: iPad simulator build
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - name: Toolchain
+        run: xcodebuild -version && xcrun simctl list runtimes
+      - name: iPad Debug build
+        run: make ipad-build
+      - name: iPad Release build
+        run: make ipad-build CONFIG=Release
       - name: Tree is clean (data rule)
         run: |
           if [ -n "$(git status --porcelain)" ]; then

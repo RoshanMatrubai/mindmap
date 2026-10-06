@@ -54,7 +54,10 @@ public final class GraphScene {
   }
 
   public init() {
-    root.isGeometryFlipped = true
+    #if os(macOS)
+      // AppKit layers are y-up; UIKit's already match the scene's y-down.
+      root.isGeometryFlipped = true
+    #endif
     root.backgroundColor = GraphStyle.canvas
     root.masksToBounds = true
     world.anchorPoint = .zero

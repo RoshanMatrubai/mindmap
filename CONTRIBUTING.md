@@ -18,6 +18,8 @@ Standalone builds use ad-hoc signing, so no Apple account or sandbox keychain ac
 | `make lint` / `make format` | Check / fix formatting with `swift format` |
 | `make preview` | Renders the sample map to `build/preview.png` |
 | `make build` | Debug build (`CONFIG=Release` for Release) |
+| `make ipad-build` | iPad app build for the iOS Simulator (`CONFIG=Release` for Release) |
+| `make ipad-run` / `ipad-stop` / `ipad-screenshot` / `ipad-logs` | Boot a simulator (`SIM="<name>"`), install and launch "mindmap dev" with `ARGS` / quit it / save `build/ipad-screenshot.png` / show its recent log |
 | `make install` | Release build copied to `/Applications/mindmap.app` |
 | `make check-isolation` | Checks that your terminal can't read `~/Documents` (or `FOLDER=<path>`) and has no Full Disk Access. For you, not for agents |
 | `make clean` | Deletes `build/` |
@@ -26,9 +28,9 @@ Everything builds into `build/`, including the clang module cache and SwiftPM ca
 
 ## Before a pull request
 
-- `make test` and `make lint` pass. CI runs both plus a Release build and fails if the build leaves the git tree dirty.
+- `make test` and `make lint` pass. CI runs both plus a Release build, builds the iPad app for the simulator, and fails if a build leaves the git tree dirty.
 - For visual changes, check `make preview` and attach a screenshot.
-- Don't hand-edit `project.pbxproj`; new files in `App/` are picked up automatically and settings go in `Config/*.xcconfig`.
+- Don't hand-edit `project.pbxproj`; new files in `App/Shared`, `App/Mac` and `App/iPad` are picked up automatically and settings go in `Config/*.xcconfig`.
 - No third-party dependencies. Product specs are in `docs/`; record setup or architecture decisions in `docs/decisions/`.
 
 ## Branches and commits

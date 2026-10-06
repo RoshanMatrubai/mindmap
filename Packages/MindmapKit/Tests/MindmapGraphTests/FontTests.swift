@@ -5,7 +5,7 @@ import Testing
 @testable import MindmapGraph
 
 private let fontsFolder = URL(fileURLWithPath: #filePath)
-  .appendingPathComponent("../../../../../App/Fonts").standardized
+  .appendingPathComponent("../../../../../App/Shared/Fonts").standardized
 
 /// Registering goes through the font server, which some agent sandboxes block: the call never
 /// returns. Probe once on a thread of its own and skip the registration tests after 5 s.

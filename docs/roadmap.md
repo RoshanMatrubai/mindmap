@@ -12,6 +12,16 @@
 **5. Reminders sync (done):** `/high` tasks become reminders in a dedicated Reminders list, due at a set time (6:30 AM by default) with an alarm, completed by `[x]`. Replaced the first Calendar version ([reminders.md](reminders.md)).
 **6. Performance and energy pass (done):** measured with the 500-node fixture (`-bench YES`), fixed what the profiles showed, smoke harness made deterministic. Numbers in [design.md](design.md#performance-step-6).
 
+## iPad
+
+A native iPadOS app (UIKit + SwiftUI, not Mac Catalyst), iPadOS 17+, iPad only, target `mindmap-ipad`. It shares `MindmapCore`, `MindmapGraph` and `App/Shared` with the Mac app ([architecture.md](architecture.md#targets-and-shared-code)). Reminders sync stays Mac-only.
+
+**i1. Port preparation (done):** app code split into `App/Shared`, `App/Mac` and `App/iPad`; `MindmapGraph` made platform-neutral (shared `GraphController` and layer code, thin `NSView` and `UIView` hosts, `CADisplayLink` up to 120 Hz on iPad); iPad target, `make ipad-*` commands and a CI simulator build. The iPad app shows the map title and the settled graph of the `-fixture` map, without interaction.
+**i2. Touch graph:** pan, pinch zoom, tap to select, drag nodes (subtrees with a modifier or long press), naming on the graph; pause motion when the scene leaves the screen.
+**i3. Editor and layout:** the outline editor (TextKit 2 `UITextView`), the store shared with the Mac (split `MapStore` from AppKit), split view and detail panel, settings.
+**i4. iCloud Drive sync:** maps in the app's iCloud Drive folder on both devices; handle file coordination, conflicts and the layout sidecars.
+**i5. Polish and device install:** keyboard and pointer shortcuts, multitasking sizes, energy check on a ProMotion iPad, signed install on a device with the Personal Team.
+
 ## Planned shortcuts
 
 - Step 3b (built): Esc clears the selection; Return adds a task; Tab adds a subtask; Delete removes; double-click on empty canvas adds a group; with a node selected, arrows move the selection (↑ parent, ↓ first child, ← → siblings), and without a selection they pan; ⇧-drag moves a subtree.

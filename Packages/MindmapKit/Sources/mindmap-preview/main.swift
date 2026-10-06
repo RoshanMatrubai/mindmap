@@ -31,8 +31,10 @@ let seed = value(after: "--seed", in: args).flatMap(Int.init) ?? 7
 
 let family = value(after: "--font", in: args) ?? GraphFonts.defaultFamily
 // The app registers bundled fonts from its Resources; here, from the repo.
-let fonts = URL(fileURLWithPath: #filePath).appendingPathComponent("../../../../../App/Fonts")
-  .standardized
+let fonts = URL(fileURLWithPath: #filePath).appendingPathComponent(
+  "../../../../../App/Shared/Fonts"
+)
+.standardized
 if !GraphFonts.register(family, in: fonts) { fail("cannot register \(family) from \(fonts.path)") }
 
 let text: String

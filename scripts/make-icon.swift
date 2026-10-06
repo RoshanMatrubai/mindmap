@@ -1,5 +1,5 @@
 // Renders the app icon from code for `make icon`, run with `swift scripts/make-icon.swift`.
-// Writes Icon Composer bundles: App/AppIcon.icon (Release) and App/Debug/AppIcon-dev.icon (Debug,
+// Writes Icon Composer bundles: App/Shared/AppIcon.icon (Release) and App/Shared/Debug/AppIcon-dev.icon (Debug,
 // the same icon with an orange badge). Each layer is a full-bleed 1024 px PNG; the system applies
 // the macOS shape, glass and shadows. See "App icon" in docs/design.md.
 import CoreGraphics
@@ -157,7 +157,7 @@ func writeIcon(at bundle: URL, badge: Bool) throws {
       ]
     ],
     "groups": groups,
-    "supported-platforms": ["squares": ["macOS"]],
+    "supported-platforms": ["squares": "shared"],
   ]
   let data = try JSONSerialization.data(
     withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
@@ -166,5 +166,5 @@ func writeIcon(at bundle: URL, badge: Bool) throws {
 }
 
 let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-try writeIcon(at: root.appendingPathComponent("App/AppIcon.icon"), badge: false)
-try writeIcon(at: root.appendingPathComponent("App/Debug/AppIcon-dev.icon"), badge: true)
+try writeIcon(at: root.appendingPathComponent("App/Shared/AppIcon.icon"), badge: false)
+try writeIcon(at: root.appendingPathComponent("App/Shared/Debug/AppIcon-dev.icon"), badge: true)
