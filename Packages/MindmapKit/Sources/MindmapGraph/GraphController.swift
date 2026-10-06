@@ -42,6 +42,9 @@ public final class GraphController: NSObject {
   public var affectedIndices: Set<Int> { displayedSimulation?.affected ?? [] }
   /// Until the user pans or zooms, the camera fits everything (first show, rebuilds, resizes).
   var following = true
+  /// The camera fits the selection (a click or tap) until the user moves it, so it re-fits when
+  /// the pane changes size, such as when the detail panel grows with the selection.
+  private var fittingSelection = false
   private var worker: SimulationWorker?
   private var motionLink: CADisplayLink?
   private var frameTask: Task<Void, Never>?
@@ -294,6 +297,15 @@ public final class GraphController: NSObject {
     let resized = scene.size != size
     scene.setSize(size)
     if resized && following && scene.layout != nil { scene.setCamera(fitCamera) }
+    if resized && fittingSelection, let box = scene.selectionBounds {
+      let target = Camera.fit(box, in: size, padding: 50)
+      // Mid-flight (the panel grows right after a tap), carry on to the new target.
+      if scene.isCameraAnimating {
+        scene.animateCamera(to: target) { [weak self] in self?.scheduleRaster() }
+      } else {
+        scene.setCamera(target)
+      }
+    }
     if resized { scheduleRaster() }
   }
 
@@ -302,12 +314,14 @@ public final class GraphController: NSObject {
 
   public func fitAll() {
     following = true
+    fittingSelection = false
     scene.animateCamera(to: fitCamera) { [weak self] in self?.scheduleRaster() }
   }
 
   /// Animated zoom about the center of the pane.
   public func zoom(by factor: Double) {
     following = false
+    fittingSelection = false
     let center = CGPoint(x: scene.size.width / 2, y: scene.size.height / 2)
     let target = scene.visibleCamera.zoomed(by: factor, about: center, limits: limits)
     scene.animateCamera(to: target) { [weak self] in self?.scheduleRaster() }
@@ -323,6 +337,7 @@ public final class GraphController: NSObject {
   /// Moves the camera at once (gestures). Labels re-rasterize shortly after it stops.
   func move(_ camera: Camera) {
     following = false
+    fittingSelection = false
     scene.setCamera(camera)
     scheduleRaster()
   }
@@ -341,9 +356,13 @@ public final class GraphController: NSObject {
   public func select(_ index: Int?, camera: Bool) {
     let had = scene.selection != nil
     scene.select(index)
-    guard camera else { return }
+    guard camera else {
+      fittingSelection = false
+      return
+    }
     if let box = scene.selectionBounds {
       following = false
+      fittingSelection = true
       scene.animateCamera(to: Camera.fit(box, in: scene.size, padding: 50)) { [weak self] in
         self?.scheduleRaster()
       }
