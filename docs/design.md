@@ -145,6 +145,18 @@ The iPad graph does what the Mac graph does, with the same look, motion and ener
 - The context menu points at the node with an invisible anchor instead of lifting a snapshot of the graph.
 - The detail panel is shared with the Mac (`App/Shared/DetailPanel.swift`); on the iPad the done checkbox is a tappable square and linked names have hover effects.
 
+## iPad editor and layout (step i3)
+
+| Topic | Decision |
+|---|---|
+| Editor | TextKit 2 `UITextView`, SF Mono at the shared editor size, the Mac's colors (dimmed bullets and done markers, dates, priorities, links), done lines struck through at 45%, dotted underlines under unresolved links. Return, Tab and ⇧Tab use `OutlineEditing`; autocorrection, smart punctuation, inline predictions and Writing Tools are off |
+| Keyboard bar | Above the on-screen keyboard: Indent, Outdent, Toggle Done, Priority ▸ (High, Medium, Low, Chill, None), Insert Link (`[]` with the cursor inside, or the selection wrapped), Move Up, Move Down, Hide Keyboard. Each is the same pure function as the Mac command |
+| Shortcuts | The Mac's `AppCommand` table (`App/Shared/AppCommand.swift`), same names and keys, in the iPadOS menu bar and the ⌘-hold overlay. Settings (⌘,) and the forces panel (⌥⌘F) come in step i5. Plain keys (Return, Tab, Delete, arrows, Esc) act on the graph only while it has focus, so the editor keeps them |
+| Wide windows | 1100 points or wider (landscape, large Stage Manager windows): editor left, graph and detail panel right, a draggable divider (editor 20–70%, at least 300 points; graph at least 400) |
+| Narrow windows | Portrait, split view, small windows: a Text / Map segmented control in the toolbar. On Map the long-press menu adds "Edit Text", which switches to Text with the node's line selected. Both views stay in the window, so the editor keeps its undo stack; the hidden graph runs no display link |
+| Sync | As on the Mac: tapping a node selects its line, moving the cursor highlights its node without moving the camera, and graph edits go through the editor (one step in its undo stack) |
+| Maps | The toolbar's title menu switches maps and has New Map and Change Maps Folder…; autosave and title-based file names as on the Mac. Release asks for a folder (document picker, security-scoped bookmark); the dev app keeps maps in its container unless launched with `-use-folder-picker YES` |
+
 ## Settings
 
 These appear in two places, a floating forces panel inside the graph pane (toggled from the toolbar and ⌥⌘F, styled like the prototype's) and the standard Settings window (⌘,). Both edit the same values live, in both directions. Every value is app-wide and persists in the container's UserDefaults, one key each, so a launch argument such as `-labelFont Quicksand` overrides it. Nothing in them is sensitive. The layout seed and pins stay per map, in the sidecar.

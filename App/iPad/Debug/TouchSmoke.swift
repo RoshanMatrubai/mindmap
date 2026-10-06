@@ -13,7 +13,7 @@
     private static var checks = 0
     private static var started = false
 
-    static func runIfRequested(_ store: MapStore) {
+    static func runIfRequested(_ store: PadMapStore) {
       guard UserDefaults.standard.bool(forKey: "editor-smoke"), !started else { return }
       started = true
       Task {
@@ -24,7 +24,7 @@
       }
     }
 
-    private static func check(_ passed: Bool, _ name: String) {
+    static func check(_ passed: Bool, _ name: String) {
       checks += 1
       if !passed { failures += 1 }
       log.notice("smoke \(passed ? "PASS" : "FAIL", privacy: .public): \(name, privacy: .public)")
@@ -32,7 +32,7 @@
 
     /// Bounded waits exist only in this opt-in harness, never in the app's motion loop.
     @discardableResult
-    private static func wait(
+    static func wait(
       _ name: String, seconds: Double = 15, until predicate: () -> Bool
     ) async -> Bool {
       let deadline = ContinuousClock.now.advanced(by: .seconds(seconds))
@@ -45,7 +45,7 @@
     }
 
     @discardableResult
-    private static func frozen(_ store: MapStore, _ view: GraphView) async -> Bool {
+    static func frozen(_ store: PadMapStore, _ view: GraphView) async -> Bool {
       await wait("graph settles and display link stops") {
         !store.isSwitching && store.parsedText == store.text
           && view.scene.layout?.model == store.model && !view.isAnimating
@@ -54,7 +54,7 @@
     }
 
     @discardableResult
-    private static func idle() -> Bool {
+    static func idle() -> Bool {
       let passed = GraphView.debugLiveDisplayLinks == 0 && GraphView.debugIdleFrames == 0
       check(
         passed,
@@ -63,21 +63,21 @@
       return passed
     }
 
-    private static func cameraIdle(_ view: GraphView) async {
+    static func cameraIdle(_ view: GraphView) async {
       await wait("camera animation finishes") { !view.scene.debugCameraAnimating }
     }
 
-    private static func pause(_ milliseconds: Int = 400) async {
+    static func pause(_ milliseconds: Int = 400) async {
       try? await Task.sleep(for: .milliseconds(milliseconds))
     }
 
-    private static func index(_ view: GraphView, _ name: String) -> Int? {
+    static func index(_ view: GraphView, _ name: String) -> Int? {
       view.scene.layout?.model.nodes.firstIndex { $0.name == name }
     }
 
     /// A view point that hits `index` (or empty canvas for nil), clear of the title and the zoom
     /// buttons.
-    private static func target(_ view: GraphView, _ index: Int?) -> CGPoint? {
+    static func target(_ view: GraphView, _ index: Int?) -> CGPoint? {
       guard let layout = view.scene.layout else { return nil }
       let bounds = view.bounds
       guard let index else {
@@ -97,20 +97,20 @@
       return inside && view.scene.node(at: p, radius: 22) == index ? p : nil
     }
 
-    private static func point(_ layout: GraphLayout, _ i: Int) -> LayoutPoint {
+    static func point(_ layout: GraphLayout, _ i: Int) -> LayoutPoint {
       LayoutPoint(x: layout.nodes[i].x, y: layout.nodes[i].y)
     }
 
-    private static func distance(_ a: LayoutPoint, _ b: CGPoint) -> Double {
+    static func distance(_ a: LayoutPoint, _ b: CGPoint) -> Double {
       hypot(a.x - b.x, a.y - b.y)
     }
 
-    private static func near(_ a: Camera, _ b: Camera) -> Bool {
+    static func near(_ a: Camera, _ b: Camera) -> Bool {
       abs(a.zoom - b.zoom) < 1e-6 * max(1, b.zoom)
         && hypot(a.offset.x - b.offset.x, a.offset.y - b.offset.y) < 1e-3
     }
 
-    private static func fitCamera(_ view: GraphView) -> Camera {
+    static func fitCamera(_ view: GraphView) -> Camera {
       Camera.fit(view.scene.layout?.bounds ?? .null, in: view.scene.size)
     }
 
@@ -129,9 +129,9 @@
       check(fixed > 0 && equal, "\(name), \(fixed) unaffected nodes move exactly zero")
     }
 
-    private static func titles(_ items: [GraphMenuItem]) -> [String] { items.map(\.title) }
+    static func titles(_ items: [GraphMenuItem]) -> [String] { items.map(\.title) }
 
-    private static func item(_ items: [GraphMenuItem], _ path: String...) -> GraphMenuItem? {
+    static func item(_ items: [GraphMenuItem], _ path: String...) -> GraphMenuItem? {
       var level = items
       var found: GraphMenuItem?
       for title in path {
@@ -142,7 +142,7 @@
     }
 
     /// Runs a menu action exactly as the system menu's item would.
-    private static func perform(_ items: [GraphMenuItem], _ path: String..., name: String) {
+    static func perform(_ items: [GraphMenuItem], _ path: String..., name: String) {
       var level = items
       var found: GraphMenuItem?
       for title in path {
@@ -169,7 +169,7 @@
 
       """
 
-    private static func run(_ store: MapStore) async {
+    private static func run(_ store: PadMapStore) async {
       guard
         await wait(
           "initial map ready",
@@ -182,6 +182,11 @@
       let savedPreferences = store.preferences
       store.preferences = Preferences()
       defer { store.preferences = savedPreferences }
+      // The graph checks run side by side, where the long-press menu has no "Edit Text".
+      let savedLayout = store.layout.forcedWide
+      store.layout.forcedWide = true
+      defer { store.layout.forcedWide = savedLayout }
+      await pause(600)
       store.newMap()
       guard
         await wait(
@@ -199,6 +204,9 @@
       await menuChecks(store, view)
       await pointerAndPanelChecks(store, view)
       await backgroundChecks(store, view)
+      await editorChecks(store, view)
+      await shortcutChecks(store, view)
+      await layoutChecks(store, view)
       _ = await wait("text autosave finishes") { !store.hasUnsavedEdits }
       let created = store.currentURL
       store.switchMap(original)
@@ -225,7 +233,7 @@
 
     // MARK: Tap
 
-    private static func tapChecks(_ store: MapStore, _ view: GraphView) async {
+    private static func tapChecks(_ store: PadMapStore, _ view: GraphView) async {
       view.fitAll()
       await cameraIdle(view)
       guard let parent = index(view, "Parent"), let child = index(view, "Child"),
@@ -239,17 +247,19 @@
       check(view.scene.debugCameraAnimating, "tap animates the camera")
       await cameraIdle(view)
       if let box = view.scene.selectionBounds {
-        // The detail panel grows with a selection, so the pane may be a little shorter than
-        // when the fit was computed: check that the branch is on screen and fills it.
+        // The exact fit for the pane as it is now (the camera re-fits when the detail panel
+        // grows with the selection), and the branch on screen.
         let camera = view.scene.camera
+        check(
+          near(camera, Camera.fit(box, in: view.scene.size, padding: 50)),
+          "camera is the exact fit of the selected branch")
         let a = camera.toScreen(CGPoint(x: box.minX, y: box.minY))
         let b = camera.toScreen(CGPoint(x: box.maxX, y: box.maxY))
         let shown = CGRect(x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y)
         let size = view.scene.size
         check(
-          CGRect(origin: .zero, size: size).insetBy(dx: -1, dy: -1).contains(shown)
-            && (shown.width >= size.width * 0.5 || shown.height >= size.height * 0.5),
-          "camera fits the selected branch")
+          CGRect(origin: .zero, size: size).insetBy(dx: -1, dy: -1).contains(shown),
+          "the selected branch is fully on screen")
       } else {
         check(false, "selection has bounds")
       }
@@ -270,7 +280,7 @@
 
     // MARK: Double-tap
 
-    private static func doubleTapChecks(_ store: MapStore, _ view: GraphView) async {
+    private static func doubleTapChecks(_ store: PadMapStore, _ view: GraphView) async {
       view.fitAll()
       await cameraIdle(view)
       guard await frozen(store, view), let second = index(view, "Second"),
@@ -296,13 +306,13 @@
         "tapping away saves the rename, keeps metadata")
       guard await frozen(store, view) else { return }
       check(index(view, "Second renamed") != nil, "renamed node shown")
-      store.undoManager.undo()
+      store.activeUndoManager.undo()
       check(store.text == before, "undo restores the exact text")
       guard await frozen(store, view) else { return }
-      store.undoManager.redo()
+      store.activeUndoManager.redo()
       check(store.text.contains("- Second renamed /high\n"), "redo applies the rename again")
       guard await frozen(store, view) else { return }
-      store.undoManager.undo()
+      store.activeUndoManager.undo()
       guard await frozen(store, view) else { return }
       await cameraIdle(view)
       await pause()
@@ -316,7 +326,7 @@
         !view.isNaming && store.text.contains("- Second returned /high\n"),
         "Return saves the rename")
       guard await frozen(store, view) else { return }
-      store.undoManager.undo()
+      store.activeUndoManager.undo()
       check(store.text == before, "undo the Return rename")
       guard await frozen(store, view) else { return }
       // Double-tap empty canvas: a group at that spot.
@@ -339,14 +349,14 @@
       check(
         distance(point(layout, group), world) < 5,
         "new group stays where it was tapped (\(Int(distance(point(layout, group), world))))")
-      store.undoManager.undo()
+      store.activeUndoManager.undo()
       check(store.text == before, "undo removes the new group")
       await frozen(store, view)
     }
 
     // MARK: Drag
 
-    private static func dragChecks(_ store: MapStore, _ view: GraphView) async {
+    private static func dragChecks(_ store: PadMapStore, _ view: GraphView) async {
       view.clearSelection()
       view.fitAll()
       await cameraIdle(view)
@@ -417,8 +427,15 @@
       await frozen(store, view)
       // Without the arm, the next plain drag moves the node alone again.
       guard let after = view.scene.layout, let again = target(view, parent) else { return }
+      // Away from the child, so a plain drag can't push it.
+      let childNow = view.scene.camera.toScreen(
+        CGPoint(x: after.nodes[child].x, y: after.nodes[child].y))
+      let gap = max(hypot(again.x - childNow.x, again.y - childNow.y), 1)
       view.debugTouchDown(at: again)
-      view.debugTouchMove(to: CGPoint(x: again.x + 30, y: again.y - 20))
+      view.debugTouchMove(
+        to: CGPoint(
+          x: again.x + (again.x - childNow.x) / gap * 30,
+          y: again.y + (again.y - childNow.y) / gap * 30))
       await pause()
       if let during = view.scene.layout {
         check(point(during, child) == point(after, child), "Move Branch lasts for one drag")
@@ -429,7 +446,7 @@
 
     // MARK: Pan and pinch
 
-    private static func cameraChecks(_ store: MapStore, _ view: GraphView) async {
+    private static func cameraChecks(_ store: PadMapStore, _ view: GraphView) async {
       view.fitAll()
       await cameraIdle(view)
       guard let layout = view.scene.layout, let empty = target(view, nil),
@@ -508,7 +525,7 @@
 
     // MARK: Long-press menu
 
-    private static func menuChecks(_ store: MapStore, _ view: GraphView) async {
+    private static func menuChecks(_ store: PadMapStore, _ view: GraphView) async {
       view.clearSelection()
       view.fitAll()
       await cameraIdle(view)
@@ -543,7 +560,7 @@
       }
       // Each action, then undo.
       func undo(_ name: String) async {
-        store.undoManager.undo()
+        store.activeUndoManager.undo()
         check(store.text == before, "undo \(name) restores the exact text")
         await frozen(store, view)
       }
@@ -616,7 +633,7 @@
 
     // MARK: Pointer and detail panel
 
-    private static func pointerAndPanelChecks(_ store: MapStore, _ view: GraphView) async {
+    private static func pointerAndPanelChecks(_ store: PadMapStore, _ view: GraphView) async {
       view.clearSelection()
       view.fitAll()
       await cameraIdle(view)
@@ -654,10 +671,12 @@
       store.toggleDone(leaf)
       check(store.text.contains("\t- [x] Far leaf\n"), "detail checkbox marks the task done")
       await frozen(store, view)
-      if let kind = store.detail?.kind, case .task(_, _, let done, _) = kind {
-        check(done, "detail shows done after the toggle")
+      // The panel refreshes right after the graph update, a moment after the freeze.
+      await wait("detail shows done after the toggle (\(store.detail?.name ?? "none"))") {
+        if let kind = store.detail?.kind, case .task(_, _, let done, _) = kind { return done }
+        return false
       }
-      store.undoManager.undo()
+      store.activeUndoManager.undo()
       check(store.text == before, "undo the checkbox")
       await frozen(store, view)
       view.clearSelection()
@@ -666,7 +685,7 @@
 
     // MARK: Background
 
-    private static func backgroundChecks(_ store: MapStore, _ view: GraphView) async {
+    private static func backgroundChecks(_ store: PadMapStore, _ view: GraphView) async {
       guard await frozen(store, view), let parent = index(view, "Parent"),
         let p = target(view, parent)
       else { return check(false, "background drag target") }

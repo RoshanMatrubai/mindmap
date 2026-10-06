@@ -247,3 +247,23 @@ private func applied(_ text: String, _ change: TextChange?) throws -> (String, N
     ).0
       == "- b\r\n- a")
 }
+
+@Test func insertLinkPutsTheCursorInsideEmptyBrackets() throws {
+  let change = try #require(
+    OutlineEditing.insertLink(text: "- task ", selection: NSRange(location: 7, length: 0)))
+  #expect(change.replacement == "[]")
+  #expect(change.range == NSRange(location: 7, length: 0))
+  #expect(change.selection == NSRange(location: 8, length: 0))
+}
+
+@Test func insertLinkWrapsTheSelectedName() throws {
+  let change = try #require(
+    OutlineEditing.insertLink(text: "- see garden", selection: NSRange(location: 6, length: 6)))
+  #expect(change.replacement == "[garden]")
+  #expect(change.selection == NSRange(location: 7, length: 6))
+}
+
+@Test func insertLinkRefusesASelectionAcrossLines() {
+  #expect(
+    OutlineEditing.insertLink(text: "- a\n- b", selection: NSRange(location: 2, length: 4)) == nil)
+}

@@ -11,7 +11,8 @@ App/                        App code in three file-system synchronized folders: 
   Mac/                      Mac target "mindmap" only: everything AppKit, MacMapStore, editor, settings,
                             Reminders sync (EventKit)
     Debug/                  DEBUG only: Mac launch arguments, smoke harness, benchmark
-  iPad/                     iPad target "mindmap-ipad" only: the iPad app shell and graph pane
+  iPad/                     iPad target "mindmap-ipad" only: PadMapStore, the UITextView editor and keyboard bar,
+                            the adaptive layout, folder picker, graph pane
     Debug/                  DEBUG only: touch smoke harness, screenshot launch hooks
 Config/                     Build settings (.xcconfig), entitlements. Local.xcconfig is yours, gitignored
 mindmap.xcodeproj/          Checked-in project. Holds structure only; settings live in Config/
@@ -48,7 +49,7 @@ Rules for shared code:
 - `App/Shared` and the shared files in `MindmapGraph` never import AppKit or UIKit, and never use `NSFont`, `NSImage`, `NSColor`, `UIFont`, `UIImage` or `UIColor`. Use Core Text, Core Graphics and `CGColor`. Platform host views live in `GraphView.swift` (`#if os(macOS)`) and `GraphView+iOS.swift` (`#if os(iOS)`).
 - An `#if os(...)` in shared code is a last resort for a real platform difference (the scene's y-flip: AppKit layers are y-up, UIKit's y-down). Prefer a host hook such as `GraphController.makeDisplayLink`.
 - Reminders sync is Mac-only: EventKit and `ReminderSyncController` are in `App/Mac`, so the iPad target doesn't compile them. `MindmapCore` keeps the pure sync logic and sidecars, which also move along with a renamed map on iPad.
-- The store is shared (step i2). `MapStore` (`App/Shared`) owns the maps folder (security-scoped bookmark), listing, loading, autosave and title renames, parsing off the main thread, graph edits as text changes and the layout sidecars, and exposes small hooks for platform glue. `MacMapStore` (`App/Mac`) subclasses it with the AppKit editor (graph edits go through `NSTextView`, one step in its undo stack), `NSOpenPanel` and Reminders sync; the Mac behaves as before. On the iPad, with no editor until step i3, graph edits replace the store's text directly, one step each on the store's `UndoManager` (which the graph view also offers as its responder's undo manager). The iPad keeps maps in its own container (`Application Support/maps`) with no picker, in Debug and, until step i4, in Release.
+- The store is shared (step i2). `MapStore` (`App/Shared`) owns the maps folder (security-scoped bookmark), listing, loading, autosave and title renames, parsing off the main thread, graph edits as text changes and the layout sidecars, and exposes small hooks for platform glue. `MacMapStore` (`App/Mac`) subclasses it with the AppKit editor (graph edits go through `NSTextView`, one step in its undo stack), `NSOpenPanel` and Reminders sync; the Mac behaves as before. `PadMapStore` (`App/iPad`) does the same with the `UITextView` editor (step i3): graph edits go through it and share its undo stack. Without an editor, the store applies changes itself on its own `UndoManager`. Release iPads pick the maps folder with a document picker; the dev app keeps maps in its container.
 
 ## Data
 

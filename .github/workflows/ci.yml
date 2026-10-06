@@ -57,7 +57,7 @@ jobs:
 
   ipad-smoke:
     # The touch harness (App/iPad/Debug/TouchSmoke.swift) drives every gesture through DEBUG hooks
-    # in a booted simulator, then three launch hooks stage screenshots. The Mac smoke harness needs
+    # in a booted simulator, then launch hooks stage screenshots. The Mac smoke harness needs
     # a frontmost window, so it stays a local run.
     name: iPad simulator smoke (touch harness and screenshots)
     runs-on: macos-26
@@ -91,22 +91,27 @@ jobs:
             exit 1
           fi
           grep "touch smoke complete" "$log"
-      - name: Screenshots (selected branch, long-press menu, mid-rename)
+      - name: Screenshots (graph states, layouts, keyboard bar)
         if: always()
         run: |
           stage() {
+            since=$(date '+%Y-%m-%d %H:%M:%S')
             make ipad-run SIM="$SIM" ARGS="-fixture sample $2"
             for i in $(seq 1 30); do
-              make -s ipad-logs > build/stage.log 2>&1 || true
+              make -s ipad-logs SINCE="$since" > build/stage.log 2>&1 || true
               grep -q "debug stage ready: $3" build/stage.log && break
               sleep 2
             done
             grep "debug stage ready" build/stage.log || echo "::warning::stage $1 not reported"
             make ipad-screenshot && cp build/ipad-screenshot.png "build/ipad-artifacts/$1.png"
           }
-          stage selected-branch "-select-node garden" "select garden"
-          stage long-press-menu "-show-menu 'fix the fence'" "menu fix the fence"
-          stage mid-rename "-select-node 'plant herbs' -rename-node YES" "rename plant herbs"
+          stage selected-branch "-layout narrow -pane map -select-node garden" "select garden"
+          stage long-press-menu "-layout narrow -pane map -show-menu 'fix the fence'" "menu fix the fence"
+          stage mid-rename "-layout narrow -pane map -select-node 'plant herbs' -rename-node YES" "rename plant herbs"
+          stage landscape-side-by-side "-orientation landscape -layout wide -select-node garden" "select garden"
+          stage portrait-text "-orientation portrait -layout narrow -pane text" "layout"
+          stage portrait-map "-orientation portrait -layout narrow -pane map" "layout"
+          stage keyboard-bar "-orientation portrait -layout narrow -pane text -focus-editor YES" "editor focused"
           make ipad-logs LAST=10m > build/ipad-artifacts/ipad-screenshots.log 2>&1 || true
           make ipad-stop
       - name: Screenshot previews in the log
