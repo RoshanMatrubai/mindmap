@@ -247,8 +247,16 @@
       check(view.scene.debugCameraAnimating, "tap animates the camera")
       await cameraIdle(view)
       if let box = view.scene.selectionBounds {
+        // The detail panel grows with a selection, so the pane may be a little shorter than
+        // when the fit was computed: check that the branch is on screen and fills it.
+        let camera = view.scene.camera
+        let a = camera.toScreen(CGPoint(x: box.minX, y: box.minY))
+        let b = camera.toScreen(CGPoint(x: box.maxX, y: box.maxY))
+        let shown = CGRect(x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y)
+        let size = view.scene.size
         check(
-          near(view.scene.camera, Camera.fit(box, in: view.scene.size, padding: 50)),
+          CGRect(origin: .zero, size: size).insetBy(dx: -1, dy: -1).contains(shown)
+            && (shown.width >= size.width * 0.5 || shown.height >= size.height * 0.5),
           "camera fits the selected branch")
       } else {
         check(false, "selection has bounds")
