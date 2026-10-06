@@ -156,6 +156,20 @@ public enum OutlineEditing {
     return apply(edits, in: lines[selected], source: source, selection: selection)
   }
 
+  /// The iPad keyboard bar's link button: `[]` with the cursor inside, or the selected name
+  /// wrapped as `[name]` (still selected). Nil for a selection across lines.
+  public static func insertLink(text: String, selection: NSRange) -> TextChange? {
+    let source = text as NSString
+    guard selection.location >= 0, selection.length >= 0,
+      NSMaxRange(selection) <= source.length
+    else { return nil }
+    let selected = source.substring(with: selection)
+    guard !selected.contains(where: \.isNewline) else { return nil }
+    return TextChange(
+      range: selection, replacement: "[" + selected + "]",
+      selection: NSRange(location: selection.location + 1, length: selection.length))
+  }
+
   /// ⌃⌘↑ / ⌃⌘↓: swaps the current bullet line and its subtasks with the sibling block above or
   /// below. Only siblings under the same parent; `nil` at either end.
   public static func moveBlock(text: String, selection: NSRange, up: Bool) -> TextChange? {

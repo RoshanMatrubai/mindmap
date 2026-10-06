@@ -3,7 +3,11 @@ import SwiftUI
 
 /// Hosts the touch graph and wires it to the shared store, as the Mac's GraphPane does.
 struct GraphPane: UIViewRepresentable {
-  @Bindable var store: MapStore
+  @Bindable var store: PadMapStore
+  /// False while a narrow window shows the text: the graph pauses its motion.
+  var visible = true
+  /// A narrow window: the long-press menu offers "Edit Text".
+  var offersEditText = false
 
   func makeUIView(context: Context) -> GraphView {
     let view = GraphView(frame: CGRect(x: 0, y: 0, width: 600, height: 600))
@@ -16,7 +20,7 @@ struct GraphPane: UIViewRepresentable {
     view.onFocus = { focused in store.graphFocused = focused }
     view.onSettle = { alpha in store.settleChanged(alpha) }
     view.onMessage = { message in store.showNotice(message) }
-    view.externalUndoManager = store.undoManager
+    view.onEditText = { index in store.editText(index) }
     view.scene.labelFamily = store.preferences.labelFont
     store.graphView = view
     return view
@@ -25,6 +29,10 @@ struct GraphPane: UIViewRepresentable {
   /// Redraws only when the store has a new layout, not on every SwiftUI update, so a dragged
   /// node isn't snapped back.
   func updateUIView(_ view: GraphView, context: Context) {
+    view.isOnScreen = visible
+    // ⌘Z with the graph focused undoes in the editor's stack, where graph edits go.
+    view.externalUndoManager = store.editorView?.undoManager
+    view.offersEditText = offersEditText
     guard let graph = store.graph, graph.generation != context.coordinator.generation else {
       return
     }

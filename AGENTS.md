@@ -40,7 +40,7 @@ All build output goes to `build/` (gitignored). Requires Xcode 26+.
 
 DEBUG-only code goes in `App/Shared/Debug/` or `App/Mac/Debug/` inside `#if DEBUG`; Release excludes those folders.
 
-The iPad app: `make ipad-run ARGS="-fixture sample"` → `make ipad-screenshot` (look at `build/ipad-screenshot.png`) → `make ipad-logs` → `make ipad-stop`. The simulator keeps the app's data in its own sandbox, apart from the Mac and from the user's real data. `ARGS="-fixture sample -editor-smoke YES"` runs the touch smoke harness (`App/iPad/Debug/TouchSmoke.swift`; PASS/FAIL lines, then `touch smoke complete: N checks, F failures`); `-select-node garden`, `-show-menu garden` and `-select-node garden -rename-node YES` stage screenshots.
+The iPad app: `make ipad-run ARGS="-fixture sample"` → `make ipad-screenshot` (look at `build/ipad-screenshot.png`) → `make ipad-logs` → `make ipad-stop`. The simulator keeps the app's data in its own sandbox, apart from the Mac and from the user's real data. `ARGS="-fixture sample -editor-smoke YES"` runs the touch smoke harness (`App/iPad/Debug/TouchSmoke.swift`; PASS/FAIL lines, then `touch smoke complete: N checks, F failures`); `-select-node garden`, `-show-menu garden` and `-select-node garden -rename-node YES` stage screenshots; `-layout wide|narrow`, `-pane text|map`, `-orientation landscape|portrait` and `-focus-editor YES` set the layout.
 
 ## The data rule
 
