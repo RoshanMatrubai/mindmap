@@ -140,15 +140,18 @@
       defer { store.preferences = savedPreferences }
       var created: URL?
       do {
-        NSApp.activate()
-        window.makeKeyAndOrderFront(nil)
-        // Responder-chain commands and first clicks need the app frontmost. macOS refuses
-        // activation while the screen is locked or the user works in another app.
+        window.orderFrontRegardless()  // occluded windows pause the simulation
+        // Responder-chain commands need the app frontmost. macOS can defer activation while
+        // the user works in another app, so keep asking until it is granted.
         guard
           await wait(
             "dev app owns key window",
             until: {
-              NSApp.isActive && NSApp.keyWindow === window
+              if !NSApp.isActive || NSApp.keyWindow !== window {
+                NSApp.activate()
+                window.makeKeyAndOrderFront(nil)
+              }
+              return NSApp.isActive && NSApp.keyWindow === window
             })
         else { return }
         store.focusEditor()
@@ -510,7 +513,7 @@
 
     private static func gestureChecks(_ view: GraphView, window: NSWindow) async {
       view.fitAll()
-      try? await Task.sleep(for: .milliseconds(450))
+      await cameraIdle(view)
       // A node toward the lower right, so a wrong y flip would move it away from the cursor.
       let target = CGPoint(x: view.bounds.width * 0.7, y: view.bounds.height * 0.7)
       guard let layout = view.scene.layout,
@@ -576,7 +579,7 @@
       view.debugMagnify(by: 0.15, about: anchor)
       check(view.scene.camera.zoom > before.zoom, "magnify handler zooms through DEBUG hook")
       view.fitAll()
-      try? await Task.sleep(for: .milliseconds(450))
+      await cameraIdle(view)
     }
 
     private static func points(_ layout: GraphLayout) -> [String: LayoutPoint] {
@@ -683,13 +686,26 @@
         check(false, "mouse event created")
         return
       }
-      window.sendEvent(event)
+      // Straight to the graph view: AppKit drops the first mouse-down on an inactive window,
+      // so routing through the window failed drag checks whenever another app was frontmost.
+      switch type {
+      case .leftMouseDown: view.mouseDown(with: event)
+      case .leftMouseDragged: view.mouseDragged(with: event)
+      case .leftMouseUp: view.mouseUp(with: event)
+      default: window.sendEvent(event)
+      }
+    }
+
+    /// Camera moves animate for about 380 ms. Wait for the animation to end, not a guess:
+    /// a mouse-down during it starts from the camera mid-flight and misses its target.
+    private static func cameraIdle(_ view: GraphView) async {
+      await wait("camera animation finishes") { !view.scene.debugCameraAnimating }
     }
 
     private static func dragChecks(_ store: MapStore, view: GraphView, window: NSWindow) async {
       guard await frozen(store), let before = view.scene.layout else { return }
       view.fitAll()
-      try? await Task.sleep(for: .milliseconds(450))
+      await cameraIdle(view)
       // Each smoke map gets a random seed. Grab a parent the hit test really returns there (no
       // closer neighbor within the 14 px radius, clear of the zoom buttons), "Parent" first.
       let camera = view.scene.camera
@@ -721,6 +737,7 @@
         y: start.y + (start.y - childAt.y) / max(away, 1) * 40)
       mouse(.leftMouseDown, point: start, view: view, window: window)
       mouse(.leftMouseDragged, point: plainEnd, view: view, window: window)
+      // Checks that something does not happen, so it waits a fixed time for it.
       try? await Task.sleep(for: .milliseconds(400))
       if let during = view.scene.layout {
         check(
@@ -743,12 +760,12 @@
       let end = CGPoint(x: shiftStart.x + 70, y: shiftStart.y + 30)
       mouse(.leftMouseDown, point: shiftStart, view: view, window: window, modifiers: .shift)
       mouse(.leftMouseDragged, point: end, view: view, window: window, modifiers: .shift)
-      try? await Task.sleep(for: .milliseconds(400))
+      await wait("⇧-drag subtree follows on springs") {
+        guard let during = view.scene.layout else { return false }
+        return during.nodes[child].x != plain.nodes[child].x
+          || during.nodes[child].y != plain.nodes[child].y
+      }
       if let during = view.scene.layout {
-        check(
-          during.nodes[child].x != plain.nodes[child].x
-            || during.nodes[child].y != plain.nodes[child].y,
-          "⇧-drag subtree follows on springs")
         let cursor = view.scene.camera.toWorld(end)
         check(
           hypot(during.nodes[index].x - cursor.x, during.nodes[index].y - cursor.y) < 0.1,
@@ -776,7 +793,7 @@
         let index = layout.model.nodes.firstIndex(where: { !$0.children.isEmpty })
       else { return }
       view.fitAll()
-      try? await Task.sleep(for: .milliseconds(450))
+      await cameraIdle(view)
       let node = layout.nodes[index]
       let start = view.scene.camera.toScreen(CGPoint(x: node.x, y: node.y))
       mouse(.leftMouseDown, point: start, view: view, window: window)
@@ -876,9 +893,7 @@
         })
       check(LayoutSidecar.load(for: created) == nil, "old sidecar gone after rename")
       let seed = LayoutSidecar.load(for: renamed)?.seed
-      if let window = store.graphView?.window {
-        menu(.reshuffle)
-      }
+      if store.graphView?.window != nil { menu(.reshuffle) }
       guard await frozen(store) else { return }
       _ = await wait(
         "reshuffle saves new seed and clears pins",
@@ -967,7 +982,7 @@
         let index = layout.model.nodes.firstIndex(where: { $0.children.count >= 2 })
       else { return }
       view.fitAll()
-      try? await Task.sleep(for: .milliseconds(450))
+      await cameraIdle(view)
       let start = view.scene.camera.toScreen(
         CGPoint(x: layout.nodes[index].x, y: layout.nodes[index].y))
       let end = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
@@ -1062,7 +1077,7 @@
           + "\nGroup\n- Parent\n\t- Child\n\t- Kid\n- Second /high\nOther\n- Distant [Second]\n")
       guard await frozen(store) else { return }
       view.fitAll()
-      try? await Task.sleep(for: .milliseconds(450))
+      await cameraIdle(view)
 
       // Click selects, highlights, fits the camera and selects the editor line.
       guard let parent = nodeIndex(view, "Parent"), let p = target(view, parent),
@@ -1084,7 +1099,7 @@
       check(
         view.scene.camera != fitted && view.scene.camera == expected,
         "click animates the camera to the branch, once (no editor feedback)")
-      try? await Task.sleep(for: .milliseconds(450))
+      await cameraIdle(view)
 
       // The editor cursor highlights without a camera move.
       let still = view.scene.camera
@@ -1160,13 +1175,13 @@
       // Double-click a label renames it, keeping its metadata.
       view.select(nil, camera: false)
       view.fitAll()  // the camera may still frame the last selection, without "Distant"
-      try? await Task.sleep(for: .milliseconds(450))
+      await cameraIdle(view)
       guard let d = nodeIndex(view, "Distant"), let dp = target(view, d) else {
         return check(false, "rename target on screen")
       }
       click(view, at: dp, window: window, clicks: 2)
       check(view.debugNamingText == "Distant", "double-click starts a rename with the name")
-      try? await Task.sleep(for: .milliseconds(450))
+      await wait("rename field has focus") { window.firstResponder is NSText }
       type("Faraway", window: window)
       sendKey("\r", code: 36, window: window)
       check(line(editor, containing: "Faraway") == "- Faraway [Second]", "rename keeps the link")
@@ -1175,7 +1190,7 @@
       // Double-click empty canvas adds a group at that spot.
       view.select(nil, camera: true)
       view.fitAll()
-      try? await Task.sleep(for: .milliseconds(450))
+      await cameraIdle(view)
       guard let empty = target(view, nil) else { return check(false, "empty canvas on screen") }
       let spot = view.scene.camera.toWorld(empty)
       click(view, at: empty, window: window, clicks: 2)
@@ -1256,7 +1271,7 @@
         view.selection == linked.index && view.scene.camera != beforeLink
           && editor.selectedRange() == store.model.nodes[linked.index].sourceRange,
         "linked name selects with camera move")
-      try? await Task.sleep(for: .milliseconds(450))
+      await cameraIdle(view)
 
       // Arrow keys move the selection: ↑ parent, ↓ first child, ← → siblings.
       guard let child = nodeIndex(view, "Child"), let kid = nodeIndex(view, "Kid"),
@@ -1278,7 +1293,7 @@
             && editor.selectedRange() == store.model.nodes[expected].sourceRange,
           "arrow \(name)")
       }
-      try? await Task.sleep(for: .milliseconds(450))
+      await cameraIdle(view)
 
       // Right-click menus.
       if let cp = target(view, child),
@@ -1360,7 +1375,7 @@
       )
       guard await frozen(store) else { return }
       view.fitAll()
-      try? await Task.sleep(for: .milliseconds(450))
+      await cameraIdle(view)
 
       // ⌘1–4 and ⌘0 in the editor: the current or selected bullet lines.
       store.focusEditor()

@@ -18,18 +18,35 @@ struct GraphUpdate {
 
 @MainActor @Observable
 final class MapStore {
-  var text = "untitled map\n" {
+  /// Not observed: every keystroke sets it, and a SwiftUI update per keystroke cost the editor
+  /// about 2 ms. Views watch `title` and `textRevision` instead.
+  @ObservationIgnored var text = "untitled map\n" {
     didSet {
-      if !loadingText && text != oldValue { edited(oldTitle: MapDocument.title(of: oldValue)) }
+      // The editor reports only real changes, so its edits skip the full-text comparison.
+      guard editorChanging || text != oldValue else { return }
+      let oldTitle = title
+      let newTitle = MapDocument.title(of: text)
+      if newTitle != oldTitle { title = newTitle }
+      if !editorChanging { textRevision += 1 }
+      if !loadingText { edited(oldTitle: oldTitle) }
     }
   }
+  /// The map title (first non-empty line), observed in place of `text`.
+  private(set) var title: String? = "untitled map"
+  /// Counts text changes that didn't come from the editor (open, reload), so it reloads them.
+  private(set) var textRevision = 0
+  @ObservationIgnored private var editorChanging = false
   private(set) var folder: URL?
   private(set) var maps: [MapFile] = []
   private(set) var currentURL: URL?
   private(set) var documentID = UUID()
   private(set) var model = MapParser.parse(text: "", today: Date(), calendar: .current)
   private(set) var parsedText = ""
-  private(set) var isSwitching = true
+  /// The editor is read-only while switching. Set here, not in a SwiftUI update, so it is
+  /// editable again the moment a switch ends.
+  private(set) var isSwitching = true {
+    didSet { editorView?.isEditable = !isSwitching }
+  }
   private(set) var graph: GraphUpdate?
   /// The detail panel's content; nil without a selection.
   private(set) var detail: NodeDetail?
@@ -125,6 +142,13 @@ final class MapStore {
     #endif
   }
 
+  /// The editor's own edits: the editor already shows them, so `textRevision` stays.
+  func editorChanged(_ text: String) {
+    editorChanging = true
+    self.text = text
+    editorChanging = false
+  }
+
   private func edited(oldTitle: String?) {
     scheduleParse()
     saveTask?.cancel()
@@ -132,7 +156,7 @@ final class MapStore {
       do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
       _ = await save()
     }
-    if MapDocument.title(of: text) != oldTitle { scheduleRename() }
+    if title != oldTitle { scheduleRename() }
   }
 
   /// Edits start from the displayed positions, not the original seed. Parsing and preparing

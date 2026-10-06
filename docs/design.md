@@ -199,6 +199,24 @@ A paper map folded in three on the graphite canvas, with the graph drawn across 
 - Release uses `App/AppIcon.icon`. Debug ("mindmap dev") uses `App/Debug/AppIcon-dev.icon`, the same icon with an orange disc in the top-right corner. Each is chosen by `ASSETCATALOG_COMPILER_APPICON_NAME` in `Config/Debug.xcconfig` and `Config/Release.xcconfig`. With the Clear or Tinted icon styles the orange turns gray, but the disc still shows.
 - Both bundles are generated from code: `make icon` runs `scripts/make-icon.swift` (CoreGraphics), which writes the layer PNGs and `icon.json`. Edit the script and rerun it rather than editing the bundles by hand.
 
+## Performance (step 6)
+
+Measured 2026-10-05 on the ProMotion MacBook's built-in panel (120 Hz) with the 500-node fixture: `make run ARGS="-fixture large -bench YES"` (`App/Debug/Benchmark.swift`). The bench drives one input per display frame: settle after a reshuffle, 2 s of trackpad pan, 2 s of pinch, a selection every 250 ms with its camera move, a 1 s crowded ⇧-drag, then typing at about 30 characters a second in bursts, so graph rebuilds land between keystrokes. It logs late frames (a display callback more than 1.5 frames after the last), the longest frame interval and main-thread input time per phase, and marks phases with "Bench" signposts. Measure an optimized build: the dev app is `-Onone`, which made the simulation, parser and label code look 10 to 400 times slower than Release (a 500-node paste took 10 s to lay out there, 25 ms optimized). The numbers below come from Debug builds compiled with `-O` and whole-module optimization, before (HEAD at step 5) and after, one run each on the same afternoon. The Mac was busy with a video call (load average about 19), so isolated late frames in every phase, before and after, are system noise; main-thread time is the trustworthy column.
+
+| Phase | Before | After | What changed |
+|---|---|---|---|
+| Keystroke (main thread, median / worst) | 5.5 / 7.9 ms | 1.8 / 3.8 ms | Title scan stops at the first line; SwiftUI no longer observes `text`; one change report per keystroke, no full-text compare |
+| Typing late frames (of 480) | 19 | 12 | Same, plus local motion touches only moved layers |
+| Selection longest frame | 80 ms | 22 ms | Labels rasterize in the window's color space as BGRA, so Core Animation no longer converts each new bitmap on the main thread at commit (241 ms → 19 ms of main time over 8 selections) |
+| Selection late frames (of 240) | 15 | 6 | Same |
+| Settle late frames, longest | 4, 31 ms | 6, 21 ms | Unchanged work (about 0.6 ms main thread per frame) |
+| Pan, pinch late frames (of 240) | 0, 5 | 0, 4 | Already compositor-only |
+| Crowded drag late frames (of 120), graph frame avg | 2, 0.58 ms | 3, 0.44 ms | Only moved layers are touched |
+| Idle CPU, idle wakeups (10 s after freeze, panel on or off) | 0.00–0.01 %, 0/s | 0.00 %, 0/s | Nothing runs: no display link, timer or task |
+| Launch CPU (first 10 s) | 0.57–0.84 s | 0.71–0.80 s | Writing Tools off saves about 7 ms |
+
+The remaining post-launch blip, about 16 s after launch, is AppKit's window-restoration snapshot (`NSPersistentUIFileManager` compressing a window image, about 120 ms of CPU, once), not the app or Writing Tools. It is left on, since turning restoration off changes how windows reopen.
+
 ## Tried and rejected
 
 Don't reintroduce these without asking.

@@ -6,6 +6,14 @@ struct LabelRasterKey: Hashable, Sendable {
   var look: NodeLook
   var font: String
   var scale: Double
+  var space: RasterSpace
+}
+
+/// The color space labels are drawn in: the window's, so Core Animation can use the bitmaps
+/// as they are. In any other space every new label is converted on the main thread at commit.
+struct RasterSpace: Hashable, @unchecked Sendable {  // CGColorSpace is immutable
+  var cg: CGColorSpace
+  static let sRGB = RasterSpace(cg: CGColorSpace(name: CGColorSpace.sRGB)!)
 }
 
 struct LabelRasterResult: Sendable {
@@ -32,7 +40,7 @@ actor LabelRasterCache {
       if Task.isCancelled { break }
       if let image = images[key] {
         result.append(LabelRasterResult(key: key, images: image))
-      } else if let image = NodeRaster.images(look: key.look, scale: key.scale) {
+      } else if let image = NodeRaster.images(key) {
         misses += 1
         images[key] = image
         order.append(key)

@@ -7,9 +7,22 @@ import Testing
 private let fontsFolder = URL(fileURLWithPath: #filePath)
   .appendingPathComponent("../../../../../App/Fonts").standardized
 
+/// Registering goes through the font server, which some agent sandboxes block: the call never
+/// returns. Probe once on a thread of its own and skip the registration tests after 5 s.
+private let registrationFinishes: Bool = {
+  let done = DispatchSemaphore(value: 0)
+  Thread.detachNewThread {
+    GraphFonts.register(GraphFonts.defaultFamily, in: fontsFolder)
+    done.signal()
+  }
+  return done.wait(timeout: .now() + 5) == .success
+}()
+
 /// Every picker family is bundled with its license, registers, and resolves to itself rather
 /// than the SF Pro fallback, so the catalog names match the fonts' own family names.
-@Test(arguments: GraphFonts.bundled)
+@Test(
+  .enabled(if: registrationFinishes, "CoreText font registration didn't finish within 5 s"),
+  arguments: GraphFonts.bundled)
 func bundledFamilyResolves(_ family: String) throws {
   let slug = family.replacingOccurrences(of: " ", with: "")
   #expect(GraphFonts.files(of: family, in: fontsFolder).count == 1)

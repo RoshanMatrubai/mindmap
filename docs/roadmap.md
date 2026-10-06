@@ -10,7 +10,7 @@
 
 **4. Settings (done):** Settings window, forces panel, all fonts with a picker, `[name]` links, priority keys on ⌘1–4 and ⌘0.
 **5. Reminders sync (done):** `/high` tasks become reminders in a dedicated Reminders list, due at a set time (6:30 AM by default) with an alarm, completed by `[x]`. Replaced the first Calendar version ([reminders.md](reminders.md)).
-6. Performance pass against the 500 node target, then the energy pass.
+**6. Performance and energy pass (done):** measured with the 500-node fixture (`-bench YES`), fixed what the profiles showed, smoke harness made deterministic. Numbers in [design.md](design.md#performance-step-6).
 
 ## Planned shortcuts
 

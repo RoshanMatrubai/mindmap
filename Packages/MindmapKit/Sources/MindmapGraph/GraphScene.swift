@@ -48,6 +48,10 @@ public final class GraphScene {
       refreshRaster()
     }
   }
+  /// The window's color space; labels are drawn in it (see `RasterSpace`).
+  public var colorSpace: CGColorSpace = RasterSpace.sRGB.cg {
+    didSet { if colorSpace != oldValue { refreshRaster() } }
+  }
 
   public init() {
     root.isGeometryFlipped = true
@@ -229,14 +233,19 @@ public final class GraphScene {
   }
 
   /// Publishes one simulation frame. Only positions and paths change, never label contents.
+  /// Local motion moves a few nodes, so only those layers are touched, and the paths only
+  /// when something moved: every layer write is copied to the render server at commit.
   public func applyPositions(_ layout: GraphLayout) {
-    guard layout.nodes.count == nodeLayers.count else { return }
+    guard let shown = self.layout, layout.nodes.count == nodeLayers.count else { return }
     self.layout = layout
+    var moved = false
     without {
-      for (index, node) in layout.nodes.enumerated() {
+      for (index, node) in layout.nodes.enumerated()
+      where node.x != shown.nodes[index].x || node.y != shown.nodes[index].y {
         nodeLayers[index].position = CGPoint(x: node.x, y: node.y)
+        moved = true
       }
-      rebuildPaths()
+      if moved { rebuildPaths() }
     }
   }
 
@@ -386,7 +395,8 @@ public final class GraphScene {
         ?? (CTFontCopyPostScriptName(GraphStyle.font(family: look.family, size: look.fontSize))
           as String)
       fontNames[fontKey] = font
-      let key = LabelRasterKey(look: look, font: font, scale: scale)
+      let key = LabelRasterKey(
+        look: look, font: font, scale: scale, space: RasterSpace(cg: colorSpace))
       if rasterKeys[i] != key || !layer.hasRaster { requests.append((i, key)) }
     }
     guard !requests.isEmpty else {
@@ -396,7 +406,7 @@ public final class GraphScene {
     if !rasterizesAsynchronously {
       without {
         for request in requests {
-          if let image = NodeRaster.images(look: request.key.look, scale: request.key.scale) {
+          if let image = NodeRaster.images(request.key) {
             nodeLayers[request.index].apply(image, scale: request.key.scale)
             rasterKeys[request.index] = request.key
           }
@@ -461,6 +471,8 @@ public final class GraphScene {
     public func debugOpacity(_ i: Int) -> Float { nodeLayers[i].opacity }
     public var debugGhostVisible: Bool { !ghost.isHidden }
     public var debugLitEdgesEmpty: Bool { litEdges.path?.isEmpty ?? true }
+    /// A camera animation (fit, zoom buttons, selection) is still running.
+    public var debugCameraAnimating: Bool { world.animationKeys()?.isEmpty == false }
   #endif
 
   private func without(_ body: () -> Void) {

@@ -230,6 +230,7 @@ public final class GraphView: NSView, NSTextFieldDelegate {
       NotificationCenter.default.addObserver(
         self, selector: #selector(occlusionChanged),
         name: NSWindow.didChangeOcclusionStateNotification, object: window)
+      scene.colorSpace = window.colorSpace?.cgColorSpace ?? scene.colorSpace
       resumeMotion()
     } else {
       pauseMotion()
@@ -369,6 +370,7 @@ public final class GraphView: NSView, NSTextFieldDelegate {
   public override func viewDidChangeBackingProperties() {
     super.viewDidChangeBackingProperties()
     scene.screenScale = window?.backingScaleFactor ?? 2
+    scene.colorSpace = window?.colorSpace?.cgColorSpace ?? scene.colorSpace
   }
 
   public override func resetCursorRects() {

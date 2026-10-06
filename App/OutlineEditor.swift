@@ -18,6 +18,8 @@ struct OutlineEditor: NSViewRepresentable {
     view.isAutomaticSpellingCorrectionEnabled = false
     view.isContinuousSpellCheckingEnabled = false
     view.isGrammarCheckingEnabled = false
+    // An outline has no use for Writing Tools; off, the editor skips their setup and checks.
+    if #available(macOS 15.0, *) { view.writingToolsBehavior = .none }
     view.backgroundColor = editorColor(0x1a1a1c)
     view.insertionPointColor = editorColor(0xc7c7cc)
     view.selectedTextAttributes = [.backgroundColor: editorColor(0x4f2fc4)]
@@ -31,10 +33,11 @@ struct OutlineEditor: NSViewRepresentable {
     view.minSize = .zero
     view.maxSize = NSSize(
       width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-    view.onChange = { text in store.text = text }
+    view.onChange = { text in store.editorChanged(text) }
     view.onSelectionChange = { range in store.editorSelectionChanged(range) }
     view.fontSize = store.preferences.editorFontSize
     view.load(store.text, map: store.documentID)
+    view.isEditable = !store.isSwitching
     scroll.documentView = view
     store.editorView = view
     return scroll
@@ -42,9 +45,10 @@ struct OutlineEditor: NSViewRepresentable {
 
   func updateNSView(_ scroll: NSScrollView, context: Context) {
     guard let view = scroll.documentView as? OutlineTextView else { return }
-    view.onChange = { text in store.text = text }
-    view.isEditable = !store.isSwitching
+    view.onChange = { text in store.editorChanged(text) }
     view.fontSize = store.preferences.editorFontSize
+    // `text` isn't observed; this revision changes when text arrives from outside the editor.
+    _ = store.textRevision
     if view.string != store.text || view.mapID != store.documentID {
       view.load(store.text, map: store.documentID)
     }
@@ -131,10 +135,10 @@ final class OutlineTextView: NSTextView, @preconcurrency NSTextStorageDelegate {
     scrollRangeToVisible(range)
   }
 
+  /// The store hears about the change from `textStorage(_:didProcessEditing:…)`, once.
   override func didChangeText() {
     super.didChangeText()
     typingAttributes = baseAttributes
-    onChange?(string)
   }
 
   func textStorage(

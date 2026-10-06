@@ -123,26 +123,29 @@ final class NodeLayer: CALayer {
 
 /// Core Text and bitmap work stays on a worker, never on the view's display callback.
 enum NodeRaster {
-  static func images(look: NodeLook, scale: Double) -> LabelImages? {
-    guard let halo = image(look: look, scale: scale, halo: true),
-      let glyphs = image(look: look, scale: scale, halo: false)
-    else { return nil }
+  static func images(_ key: LabelRasterKey) -> LabelImages? {
+    guard let halo = image(key, halo: true), let glyphs = image(key, halo: false) else {
+      return nil
+    }
     return LabelImages(halo: halo, glyphs: glyphs)
   }
 
-  private static func image(look: NodeLook, scale: Double, halo: Bool) -> CGImage? {
+  private static func image(_ key: LabelRasterKey, halo: Bool) -> CGImage? {
+    let look = key.look
     let margin = 2.0
     let rect = CGRect(
       x: -look.halfWidth - margin, y: -look.radius - margin,
       width: (look.halfWidth + margin) * 2,
       height: look.radius + look.down + margin * 2)
-    let scale = max(0.1, scale)
+    let scale = max(0.1, key.scale)
+    // BGRA, premultiplied: the layout Core Animation uploads without copying.
     guard
       let ctx = CGContext(
         data: nil, width: max(1, Int(ceil(rect.width * scale))),
         height: max(1, Int(ceil(rect.height * scale))), bitsPerComponent: 8,
-        bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
-        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        bytesPerRow: 0, space: key.space.cg,
+        bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+          | CGBitmapInfo.byteOrder32Little.rawValue)
     else { return nil }
     ctx.scaleBy(x: scale, y: -scale)
     ctx.translateBy(x: -rect.minX, y: -rect.maxY)

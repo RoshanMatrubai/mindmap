@@ -39,7 +39,7 @@ struct ContentView: View {
             }
           }
         } label: {
-          Text(MapDocument.title(of: store.text) ?? "untitled map")
+          Text(store.title ?? "untitled map")
         }
         .disabled(store.isSwitching)
         .help("Switch maps")
@@ -59,6 +59,7 @@ struct ContentView: View {
       #if DEBUG
         DebugLaunch.logLaunch("window")
         EditorSmoke.runIfRequested()
+        Benchmark.runIfRequested(store)
         DebugLaunch.applyWindowSize()
       #endif
       if store.folder == nil && !store.isSwitching {
